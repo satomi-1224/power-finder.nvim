@@ -10,7 +10,7 @@ Zed / IntelliJ の *Find in Files* 級のプロジェクト検索・一括置換
 - **一体型パネル** — 上部の条件フォーム（Search / Replace / Include / Exclude）と、
   下部の読み取り専用結果を、フローティング2ウィンドウで表示。
 - **ライブ検索** — 入力のたびにデバウンス付きで ripgrep を再実行。進行中の検索はキャンセル。
-- **正規表現 / リテラル / case / word** — トグルで即切替（`smart-case` 対応）。
+- **正規表現 / case / word** — トグルで即切替（既定はすべて OFF＝リテラル・大小無視・部分一致）。
 - **Include / Exclude glob** — 対象・除外を glob で指定（カンマ区切りで複数）。
 - **検索スコープ** — Project（git ルート）/ Cwd / 開いているバッファ / 任意パス。
 - **diff プレビュー置換** — ripgrep の `--replace` で `$1` 等のキャプチャ参照も正確に算出。
@@ -103,15 +103,15 @@ require("power-finder").setup({
     min_query = 1,
     max_results = 10000,
     max_columns = 4096,
-    case = "smart",     -- "smart" | "sensitive" | "ignore"
     hidden = false,
     no_ignore = false,
   },
   defaults = {
     include = "",
-    exclude = "**/.git/**",
+    exclude = "",
     scope = "project",  -- "project" | "cwd" | "buffers" | "path"
-    regex = true,
+    regex = false,      -- OFF => literal (fixed-strings)
+    case = false,       -- OFF => ignore case, ON => case-sensitive
     word = false,
   },
   replace = { write_buffers = true },

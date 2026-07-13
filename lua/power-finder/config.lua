@@ -17,17 +17,18 @@ M.defaults = {
     min_query = 1,
     max_results = 10000,
     max_columns = 4096,
-    case = "smart", -- "smart" | "sensitive" | "ignore"
     hidden = false,
     no_ignore = false,
   },
 
-  -- Initial state of a freshly opened finder.
+  -- Initial state of a freshly opened finder. regex/case/word all start OFF;
+  -- the user turns them on as needed.
   defaults = {
     include = "",
-    exclude = "**/.git/**",
+    exclude = "",
     scope = "project", -- "project" | "cwd" | "buffers" | "path"
-    regex = true,
+    regex = false, -- OFF => fixed-strings (literal)
+    case = false, -- OFF => ignore case; ON => case-sensitive
     word = false,
   },
 

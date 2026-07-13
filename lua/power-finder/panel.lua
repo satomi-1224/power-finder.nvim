@@ -64,7 +64,7 @@ function Panel:init(opts)
   self.toggles = last.toggles and vim.deepcopy(last.toggles)
     or {
       regex = d.regex,
-      case = self.opts.search.case,
+      case = d.case,
       word = d.word,
     }
   self.scope = opts.scope or last.scope or d.scope
@@ -270,27 +270,19 @@ function Panel:apply_form_marks()
     end
   end
 
-  -- toggle chips, right-aligned on the search row
+  -- toggle chips, right-aligned on the search row (all simple ON/OFF)
   local t = self.toggles
-  local case_label, case_hl
-  if t.case == "sensitive" then
-    case_label, case_hl = "Aa", "PowerFinderToggleOn"
-  elseif t.case == "smart" then
-    case_label, case_hl = "Aa", "PowerFinderToggleCase"
-  else
-    case_label, case_hl = "aa", "PowerFinderToggleOff"
-  end
-  local function chip(label, hlg)
-    return { " " .. label .. " ", hlg }
+  local function chip(label, on)
+    return { " " .. label .. " ", on and "PowerFinderToggleOn" or "PowerFinderToggleOff" }
   end
   local gap = { " ", "PowerFinderNormal" }
   vim.api.nvim_buf_set_extmark(self.form_buf, NS, 0, 0, {
     virt_text = {
-      chip(".*", t.regex and "PowerFinderToggleOn" or "PowerFinderToggleOff"),
+      chip(".*", t.regex),
       gap,
-      chip(case_label, case_hl),
+      chip("Aa", t.case),
       gap,
-      chip("W", t.word and "PowerFinderToggleOn" or "PowerFinderToggleOff"),
+      chip("W", t.word),
       { " ", "PowerFinderNormal" },
     },
     virt_text_pos = "right_align",
@@ -349,7 +341,8 @@ function Panel:gather_query()
     exclude_globs = util.split_csv(self.values.exclude),
     paths = scope_mod.resolve(self.scope, { cwd = self.cwd, scope_paths = self.scope_paths }),
     regex = self.toggles.regex,
-    case = self.toggles.case,
+    -- boolean toggle: ON => case-sensitive, OFF => ignore case
+    case = self.toggles.case and "sensitive" or "ignore",
     word = self.toggles.word,
     hidden = s.hidden,
     no_ignore = s.no_ignore,
@@ -768,11 +761,14 @@ function Panel:toggle(name)
   elseif name == "word" then
     self.toggles.word = not self.toggles.word
   elseif name == "case" then
-    local order = { smart = "sensitive", sensitive = "ignore", ignore = "smart" }
-    self.toggles.case = order[self.toggles.case] or "smart"
+    self.toggles.case = not self.toggles.case
   end
   self:apply_form_marks()
-  self:schedule_search()
+  if self.mode == "preview" then
+    self:schedule_replace()
+  else
+    self:schedule_search()
+  end
 end
 
 function Panel:set_scope(scope, paths)
