@@ -159,6 +159,27 @@ describe("panel", function()
     pcall(vim.cmd, "cclose")
   end)
 
+  it("folds the file group under the cursor (Space handler)", function()
+    local dir = make_tree({ ["a.ts"] = "handleRequest\nhandleRequest\n" })
+    local p = panel_mod.open({ cwd = dir, scope = "path", scope_paths = { dir } })
+    p:_set_values({ search = "handleRequest" })
+    local done = false
+    p:_search_now(function()
+      done = true
+    end)
+    wait_until(function()
+      return done
+    end)
+    local before = #p:_results_lines()
+    -- line 3 is the file header; toggle_fold acts on the item under the cursor
+    pcall(vim.api.nvim_win_set_cursor, p.res_win, { 3, 0 })
+    p:toggle_fold()
+    assert.is_true(#p:_results_lines() < before)
+    p:toggle_fold()
+    assert.equals(before, #p:_results_lines())
+    p:close()
+  end)
+
   it("remembers conditions across opens for the session", function()
     local dir = make_tree({ ["a.ts"] = "handleRequest\n" })
     local p = panel_mod.open({ cwd = dir, scope = "path", scope_paths = { dir } })

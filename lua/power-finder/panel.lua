@@ -551,7 +551,7 @@ function Panel:footer_chunks()
   else
     items = {
       { "Tab", "pane" },
-      { disp(m.fold), "fold" },
+      { "Spc", "fold" },
       { disp(m.toggle_regex), "regex" },
       { disp(m.toggle_case), "case" },
       { disp(m.toggle_word), "word" },
@@ -943,9 +943,13 @@ function Panel:setup_mappings()
       self_:toggle_fold()
     end
   end)
+  -- Space: fold/unfold the file group under the cursor (search); toggle the
+  -- file's apply state (preview).
   self:map({ self.res_buf }, { "n" }, "<Space>", function()
     if self_.mode == "preview" then
       self_:toggle_preview_file()
+    else
+      self_:toggle_fold()
     end
   end)
   self:map({ self.res_buf }, { "n" }, "<C-a>", function()
