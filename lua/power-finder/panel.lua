@@ -74,6 +74,8 @@ function Panel:init(opts)
   self.results = { files = {}, total = 0, truncated = false }
   self.line_index = {}
   self.preview = nil
+  -- paths the user has unchecked in replace mode; persists across live rebuilds
+  self.replace_deselected = {}
   self.searcher = search.debounced({
     delay = self.opts.search.debounce_ms,
     min_query = self.opts.search.min_query,
@@ -232,7 +234,7 @@ end
 
 local PLACEHOLDER = {
   search = "type to search…",
-  replace = "empty — add text to enable replace",
+  -- replace is handled specially (mode-dependent) in apply_form_marks
   include = "e.g. *.ts, src/**  (blank = all files)",
   exclude = "e.g. **/node_modules/**",
 }
@@ -245,15 +247,22 @@ function Panel:apply_form_marks()
   local cur = vim.api.nvim_buf_get_lines(self.form_buf, 0, #FIELDS, false)
   for i, f in ipairs(FIELDS) do
     local empty = (cur[i] or "") == ""
-    local hlg = (f == "search" and not empty) and "PowerFinderPrompt" or "PowerFinderLabel"
+    -- which field is the "live" one for the current mode
+    local active = (f == "search" and self.mode == "search") or (f == "replace" and self.mode == "preview")
+    local hlg = (active and not empty) and "PowerFinderPrompt" or "PowerFinderLabel"
     vim.api.nvim_buf_set_extmark(self.form_buf, NS, i - 1, 0, {
       virt_text = { { " " .. string.format("%-" .. (LABEL_W - 1) .. "s", LABELS[f]), hlg } },
       virt_text_pos = "inline",
       right_gravity = false,
     })
-    if empty and PLACEHOLDER[f] then
+    local ph = PLACEHOLDER[f]
+    if f == "replace" then
+      -- Replace is only editable in replace mode; hint how to get there.
+      ph = self.mode == "preview" and "type a replacement… (live)" or "press C-d to replace"
+    end
+    if empty and ph then
       vim.api.nvim_buf_set_extmark(self.form_buf, NS, i - 1, 0, {
-        virt_text = { { PLACEHOLDER[f], "PowerFinderGhost" } },
+        virt_text = { { ph, "PowerFinderGhost" } },
         virt_text_pos = "eol",
       })
     end
@@ -363,6 +372,43 @@ function Panel:schedule_search()
       self.results = results
     end
     self:render_results()
+  end)
+end
+
+-- Live replace: re-run ripgrep with --replace and rebuild the diff on every
+-- change while in replace mode. When the Replace field is empty we just show
+-- the matches so the user sees what will be affected.
+function Panel:schedule_replace()
+  if self.mode ~= "preview" then
+    return
+  end
+  local q = self:gather_query()
+  q.cwd = self.cwd
+  local has_replace = self.values.replace ~= ""
+  q.with_replace = has_replace
+  self.searcher:request(q, function(err, results)
+    if not self:is_open() or self.mode ~= "preview" then
+      return
+    end
+    if err then
+      self.results = { files = {}, total = 0, truncated = false, error = err }
+      self.preview = nil
+    elseif not has_replace then
+      self.results = results
+      self.preview = nil
+    elseif #(results.files or {}) > 0 and (results.total or 0) > 0 and not replace._has_replacement(results) then
+      -- ripgrep too old to report replacement data
+      self.results = results
+      self.results.error = "replace preview needs ripgrep 15+ (its --json output lacks replacement data)"
+      self.preview = nil
+    else
+      local preview = replace.build_preview(results)
+      for _, f in ipairs(preview) do
+        f.selected = not self.replace_deselected[f.path]
+      end
+      self.preview = preview
+    end
+    self:render_replace()
   end)
 end
 
@@ -731,38 +777,29 @@ end
 -- replace preview mode
 ------------------------------------------------------------------------------
 
+-- Enter replace mode: the Replace field becomes editable and focused, and the
+-- diff updates live as the replacement (or search) changes. C-d again re-focuses
+-- the Replace field.
 function Panel:enter_preview()
   self:read_form()
-  if self.values.replace == "" then
-    vim.notify("power-finder: Replace field is empty", vim.log.levels.WARN)
-    return
-  end
-  self.searcher:cancel()
-  local q = self:gather_query()
-  q.cwd = self.cwd
-  replace.gather_preview(q, { cwd = self.cwd, max_results = self.opts.search.max_results }, function(err, preview)
-    if not self:is_open() then
-      return
-    end
-    if err then
-      vim.notify("power-finder: " .. err, vim.log.levels.ERROR)
-      return
-    end
-    if #preview == 0 then
-      vim.notify("power-finder: nothing to replace", vim.log.levels.INFO)
-      return
-    end
-    self.mode = "preview"
-    self.preview = preview
-    self:render_preview()
-    self:update_footer()
-    vim.cmd("stopinsert")
-    vim.api.nvim_set_current_win(self.res_win)
-    pcall(vim.api.nvim_win_set_cursor, self.res_win, { HEADER_ROWS + 1, 0 })
-  end)
+  self.mode = "preview"
+  self.preview = nil
+  self.replace_deselected = {}
+  self:apply_form_marks()
+  self:update_footer()
+  self:focus()
+  pcall(vim.api.nvim_win_set_cursor, self.form_win, { 2, #(self.values.replace or "") })
+  vim.cmd("startinsert!")
+  self:schedule_replace()
 end
 
-function Panel:render_preview()
+function Panel:render_replace()
+  -- Before a replacement is typed (or on error) show the plain matches so the
+  -- user can see what will be affected.
+  if not self.preview then
+    self:render_results()
+    return
+  end
   local from = self.values.search
   local to = self.values.replace
   local s = replace.summarize(self.preview)
@@ -824,15 +861,17 @@ function Panel:toggle_preview_file()
   local item = self:item_at_cursor()
   if item and item.kind == "pfile" then
     item.file.selected = not item.file.selected
-    self:render_preview()
+    self.replace_deselected[item.file.path] = (not item.file.selected) or nil
+    self:render_replace()
   end
 end
 
 function Panel:select_all(v)
   for _, f in ipairs(self.preview or {}) do
     f.selected = v
+    self.replace_deselected[f.path] = (not v) or nil
   end
-  self:render_preview()
+  self:render_replace()
 end
 
 function Panel:apply()
@@ -851,9 +890,13 @@ end
 function Panel:exit_preview()
   self.mode = "search"
   self.preview = nil
-  self:render_results()
+  self.replace_deselected = {}
+  self:apply_form_marks()
   self:update_footer()
   self:focus()
+  pcall(vim.api.nvim_win_set_cursor, self.form_win, { 1, #(self.values.search or "") })
+  vim.cmd("startinsert!")
+  self:schedule_search()
 end
 
 ------------------------------------------------------------------------------
@@ -897,7 +940,14 @@ function Panel:setup_mappings()
     self_:pick_scope()
   end)
   self:map(both, { "n", "i" }, m.replace_preview, function()
-    self_:enter_preview()
+    if self_.mode == "preview" then
+      -- already replacing: jump to the Replace field to edit the term
+      self_:focus()
+      pcall(vim.api.nvim_win_set_cursor, self_.form_win, { 2, #(self_.values.replace or "") })
+      vim.cmd("startinsert!")
+    else
+      self_:enter_preview()
+    end
   end)
 
   -- form editing guards ------------------------------------------------
@@ -1011,7 +1061,31 @@ function Panel:setup_autocmds()
       -- Refresh labels/placeholders/chips every keystroke so the empty-field
       -- placeholders appear and disappear as the user types.
       self:apply_form_marks()
-      self:schedule_search()
+      if self.mode == "preview" then
+        self:schedule_replace()
+      else
+        self:schedule_search()
+      end
+    end,
+  })
+  -- The Replace field is locked in search mode: bounce the cursor off it so it
+  -- can only be edited after entering replace mode with C-d.
+  vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+    group = grp,
+    buffer = self.form_buf,
+    callback = function()
+      if self.mode ~= "search" or not (self.form_win and vim.api.nvim_win_is_valid(self.form_win)) then
+        return
+      end
+      local row = vim.api.nvim_win_get_cursor(self.form_win)[1]
+      if row == 2 then
+        local target = (self._form_prev_row and self._form_prev_row < 2) and 3 or 1
+        local line = vim.api.nvim_buf_get_lines(self.form_buf, target - 1, target, false)[1] or ""
+        pcall(vim.api.nvim_win_set_cursor, self.form_win, { target, #line })
+        self._form_prev_row = target
+      else
+        self._form_prev_row = row
+      end
     end,
   })
   -- close everything if either window is left/closed
