@@ -74,8 +74,10 @@ function Panel:init(opts)
   self.results = { files = {}, total = 0, truncated = false }
   self.line_index = {}
   self.preview = nil
-  -- paths the user has unchecked in replace mode; persists across live rebuilds
+  -- paths the user has unchecked / folded in replace mode; persist across the
+  -- live rebuilds that happen as the replacement is typed
   self.replace_deselected = {}
+  self.replace_collapsed = {}
   self.searcher = search.debounced({
     delay = self.opts.search.debounce_ms,
     min_query = self.opts.search.min_query,
@@ -405,6 +407,7 @@ function Panel:schedule_replace()
       local preview = replace.build_preview(results)
       for _, f in ipairs(preview) do
         f.selected = not self.replace_deselected[f.path]
+        f.collapsed = self.replace_collapsed[f.path] or false
       end
       self.preview = preview
     end
@@ -546,6 +549,7 @@ function Panel:render_results()
 
   self:apply_marks(marks)
   vim.bo[self.res_buf].modifiable = false
+  self:snap_cursor()
 end
 
 -- Apply a list of highlight marks. `whole` spans the entire line (hl_eol),
@@ -588,10 +592,11 @@ function Panel:footer_chunks()
   local items
   if self.mode == "preview" then
     items = {
-      { disp(m.open), "apply" },
-      { "Space", "toggle" },
+      { "Spc", "fold" },
+      { disp(m.open), "check" },
       { "C-a", "all" },
       { "C-x", "none" },
+      { "C-CR", "apply" },
       { "Esc", "back" },
     }
   else
@@ -663,6 +668,60 @@ function Panel:item_at_cursor()
   end
   local row = vim.api.nvim_win_get_cursor(self.res_win)[1]
   return self.line_index[row]
+end
+
+-- Which result lines the cursor may rest on. Status/blank/hint/diff-detail
+-- lines are skipped so navigation only stops on something actionable.
+function Panel:actionable_kinds()
+  if self.mode == "preview" then
+    return { pfile = true }
+  end
+  return { file = true, match = true }
+end
+
+-- Keep the results cursor on an actionable line: if it landed on a dead line
+-- (status, blank, header, diff body), jump to the nearest actionable one,
+-- preferring the direction of travel.
+function Panel:snap_cursor()
+  if not (self.res_win and vim.api.nvim_win_is_valid(self.res_win)) then
+    return
+  end
+  local ok = self.actionable_kinds and true
+  if not ok then
+    return
+  end
+  local kinds = self:actionable_kinds()
+  local row = vim.api.nvim_win_get_cursor(self.res_win)[1]
+  local it = self.line_index[row]
+  if it and kinds[it.kind] then
+    self._res_prev_row = row
+    return
+  end
+  local total = vim.api.nvim_buf_line_count(self.res_buf)
+  local function find(from, step)
+    local r = from
+    while r >= 1 and r <= total do
+      local x = self.line_index[r]
+      if x and kinds[x.kind] then
+        return r
+      end
+      r = r + step
+    end
+    return nil
+  end
+  local down = (self._res_prev_row or 0) <= row
+  local target
+  if down then
+    target = find(row, 1) or find(row, -1)
+  else
+    target = find(row, -1) or find(row, 1)
+  end
+  if target then
+    pcall(vim.api.nvim_win_set_cursor, self.res_win, { target, 0 })
+    self._res_prev_row = target
+  else
+    self._res_prev_row = row
+  end
 end
 
 function Panel:open_selected(how)
@@ -785,6 +844,7 @@ function Panel:enter_preview()
   self.mode = "preview"
   self.preview = nil
   self.replace_deselected = {}
+  self.replace_collapsed = {}
   self:apply_form_marks()
   self:update_footer()
   self:focus()
@@ -816,35 +876,39 @@ function Panel:render_replace()
 
   for _, f in ipairs(self.preview) do
     local box = f.selected and "✓" or "○"
-    lines[#lines + 1] = string.format(" %s %s  (%d)", box, self:display_path(f.path), f.changes)
+    local disc = f.collapsed and "▸" or "▾"
+    lines[#lines + 1] = string.format(" %s %s %s  (%d)", box, disc, self:display_path(f.path), f.changes)
     index[#lines] = { kind = "pfile", file = f }
     local row = #lines - 1
     marks[#marks + 1] =
       { row = row, whole = true, hl = f.selected and "PowerFinderSelected" or "PowerFinderDeselected" }
     marks[#marks + 1] =
       { row = row, col = 1, col_end = 4, hl = f.selected and "PowerFinderCheckbox" or "PowerFinderCheckboxOff" }
+    marks[#marks + 1] = { row = row, col = 4, col_end = 7, hl = "PowerFinderDisc" }
     if not f.selected then
       lines[#lines] = lines[#lines] .. "  — excluded"
     end
-    -- Always show the hunks; dim them when the file is deselected (mockup UX).
-    for _, l in ipairs(f.lines) do
-      lines[#lines + 1] = string.format("%6d -%s", l.lnum, l.old)
-      index[#lines] = { kind = "pdel" }
-      local drow = #lines - 1
-      if f.selected then
-        marks[#marks + 1] = { row = drow, whole = true, hl = "PowerFinderDiffDelete" }
-        marks[#marks + 1] = { row = drow, col = 6, col_end = 8, hl = "PowerFinderDiffDelSign" }
-      else
-        marks[#marks + 1] = { row = drow, whole = true, hl = "PowerFinderDeselected" }
-      end
-      lines[#lines + 1] = string.format("       +%s", l.new)
-      index[#lines] = { kind = "padd" }
-      local arow = #lines - 1
-      if f.selected then
-        marks[#marks + 1] = { row = arow, whole = true, hl = "PowerFinderDiffAdd" }
-        marks[#marks + 1] = { row = arow, col = 6, col_end = 8, hl = "PowerFinderDiffAddSign" }
-      else
-        marks[#marks + 1] = { row = arow, whole = true, hl = "PowerFinderDeselected" }
+    -- Hunks: hidden when the group is folded; dimmed when the file is deselected.
+    if not f.collapsed then
+      for _, l in ipairs(f.lines) do
+        lines[#lines + 1] = string.format("%6d -%s", l.lnum, l.old)
+        index[#lines] = { kind = "pdel" }
+        local drow = #lines - 1
+        if f.selected then
+          marks[#marks + 1] = { row = drow, whole = true, hl = "PowerFinderDiffDelete" }
+          marks[#marks + 1] = { row = drow, col = 6, col_end = 8, hl = "PowerFinderDiffDelSign" }
+        else
+          marks[#marks + 1] = { row = drow, whole = true, hl = "PowerFinderDeselected" }
+        end
+        lines[#lines + 1] = string.format("       +%s", l.new)
+        index[#lines] = { kind = "padd" }
+        local arow = #lines - 1
+        if f.selected then
+          marks[#marks + 1] = { row = arow, whole = true, hl = "PowerFinderDiffAdd" }
+          marks[#marks + 1] = { row = arow, col = 6, col_end = 8, hl = "PowerFinderDiffAddSign" }
+        else
+          marks[#marks + 1] = { row = arow, whole = true, hl = "PowerFinderDeselected" }
+        end
       end
     end
   end
@@ -855,6 +919,7 @@ function Panel:render_replace()
   vim.api.nvim_buf_clear_namespace(self.res_buf, NS, 0, -1)
   self:apply_marks(marks)
   vim.bo[self.res_buf].modifiable = false
+  self:snap_cursor()
 end
 
 function Panel:toggle_preview_file()
@@ -862,6 +927,16 @@ function Panel:toggle_preview_file()
   if item and item.kind == "pfile" then
     item.file.selected = not item.file.selected
     self.replace_deselected[item.file.path] = (not item.file.selected) or nil
+    self:render_replace()
+  end
+end
+
+-- Space in replace mode: fold/unfold a file's diff hunks.
+function Panel:toggle_preview_fold()
+  local item = self:item_at_cursor()
+  if item and item.kind == "pfile" and item.file then
+    item.file.collapsed = not item.file.collapsed
+    self.replace_collapsed[item.file.path] = item.file.collapsed or nil
     self:render_replace()
   end
 end
@@ -891,6 +966,7 @@ function Panel:exit_preview()
   self.mode = "search"
   self.preview = nil
   self.replace_deselected = {}
+  self.replace_collapsed = {}
   self:apply_form_marks()
   self:update_footer()
   self:focus()
@@ -976,28 +1052,34 @@ function Panel:setup_mappings()
   end
 
   -- results/preview-only ------------------------------------------------
+  -- Enter: open the match (search) / toggle the file's apply check (replace).
   self:map({ self.res_buf }, { "n" }, m.open, function()
     if self_.mode == "preview" then
-      self_:apply()
+      self_:toggle_preview_file()
     else
       self_:open_selected("edit")
+    end
+  end)
+  -- C-CR: apply the checked files (replace mode).
+  self:map(both, { "n", "i" }, "<C-CR>", function()
+    if self_.mode == "preview" then
+      self_:apply()
     end
   end)
   self:map({ self.res_buf }, { "n" }, m.open_vsplit, function()
     self_:open_selected("vsplit")
   end)
+  -- Space / za: fold-unfold the group under the cursor (both modes).
   self:map({ self.res_buf }, { "n" }, m.fold, function()
     if self_.mode == "preview" then
-      self_:toggle_preview_file()
+      self_:toggle_preview_fold()
     else
       self_:toggle_fold()
     end
   end)
-  -- Space: fold/unfold the file group under the cursor (search); toggle the
-  -- file's apply state (preview).
   self:map({ self.res_buf }, { "n" }, "<Space>", function()
     if self_.mode == "preview" then
-      self_:toggle_preview_file()
+      self_:toggle_preview_fold()
     else
       self_:toggle_fold()
     end
@@ -1086,6 +1168,14 @@ function Panel:setup_autocmds()
       else
         self._form_prev_row = row
       end
+    end,
+  })
+  -- Keep the results cursor on actionable lines only.
+  vim.api.nvim_create_autocmd({ "CursorMoved", "WinEnter" }, {
+    group = grp,
+    buffer = self.res_buf,
+    callback = function()
+      self:snap_cursor()
     end,
   })
   -- close everything if either window is left/closed

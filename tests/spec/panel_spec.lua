@@ -160,6 +160,43 @@ describe("panel", function()
     p:close()
   end)
 
+  it("keeps the results cursor off dead lines (status/blank)", function()
+    local dir = make_tree({ ["a.ts"] = "handleRequest\n" })
+    local p = panel_mod.open({ cwd = dir, scope = "path", scope_paths = { dir } })
+    p:_set_values({ search = "handleRequest" })
+    local done = false
+    p:_search_now(function()
+      done = true
+    end)
+    wait_until(function()
+      return done
+    end)
+    vim.api.nvim_set_current_win(p.res_win)
+    pcall(vim.api.nvim_win_set_cursor, p.res_win, { 1, 0 }) -- status line (dead)
+    p:snap_cursor()
+    local row = vim.api.nvim_win_get_cursor(p.res_win)[1]
+    local kind = p.line_index[row] and p.line_index[row].kind
+    assert.is_true(kind == "file" or kind == "match")
+    p:close()
+  end)
+
+  it("folds a file's diff in replace mode (Space handler)", function()
+    local dir = make_tree({ ["a.ts"] = "handleRequest()\n" })
+    local p = panel_mod.open({ cwd = dir, scope = "path", scope_paths = { dir } })
+    p:_set_values({ search = "handleRequest", replace = "x" })
+    p:enter_preview()
+    assert.is_true(wait_until(function()
+      return contains(p:_results_lines(), "+x()")
+    end))
+    local before = #p:_results_lines()
+    pcall(vim.api.nvim_win_set_cursor, p.res_win, { 3, 0 }) -- the pfile row
+    p:toggle_preview_fold()
+    assert.is_true(#p:_results_lines() < before)
+    p:toggle_preview_fold()
+    assert.equals(before, #p:_results_lines())
+    p:close()
+  end)
+
   it("populates the quickfix list", function()
     local dir = make_tree({ ["a.ts"] = "handleRequest\nhandleRequest\n" })
     local p = panel_mod.open({ cwd = dir, scope = "path", scope_paths = { dir } })
