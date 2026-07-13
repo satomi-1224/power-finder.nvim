@@ -21,7 +21,7 @@ jobs:
       matrix:
         neovim: [stable, nightly]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Pin a modern ripgrep: the replace feature relies on the `replacement`
       # field in `rg --json` output, which requires ripgrep 15+.
@@ -48,7 +48,7 @@ jobs:
     name: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check formatting (stylua)
         uses: JohnnyMorganz/stylua-action@v4
         with:
