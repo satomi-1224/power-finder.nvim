@@ -8,15 +8,19 @@ Zed / IntelliJ の *Find in Files* 級のプロジェクト検索・一括置換
 構造化フォームで条件を組み、ライブで結果を見て、diff を確認してから安全に置換します。
 
 - **一体型パネル** — 上部の条件フォーム（Search / Replace / Include / Exclude）と、
-  下部の読み取り専用結果を、フローティング2ウィンドウで表示。
+  下部の読み取り専用結果を、不透明なフローティング2ウィンドウで表示。`<Tab>` で上下ペインを行き来。
 - **ライブ検索** — 入力のたびにデバウンス付きで ripgrep を再実行。進行中の検索はキャンセル。
-- **正規表現 / case / word** — トグルで即切替（既定はすべて OFF＝リテラル・大小無視・部分一致）。
-- **Include / Exclude glob** — 対象・除外を glob で指定（カンマ区切りで複数）。
-- **検索スコープ** — Project（git ルート）/ Cwd / 開いているバッファ / 任意パス。
-- **diff プレビュー置換** — ripgrep の `--replace` で `$1` 等のキャプチャ参照も正確に算出。
-  ファイル単位でチェックし、mtime による競合検知付きで安全に一括適用。
-- **quickfix 連携** — 結果を quickfix へ送って既存ワークフローへ橋渡し。
-- **Selenized 準拠** — 標準ハイライトへリンクするので、そのままの配色に馴染む。
+- **トグルチップ（`.* Aa W`）** — regex / case（大小区別）/ word を検索行の右端に表示。
+  既定はすべて **OFF**（リテラル・大小無視・部分一致）で、`<C-r>` / `<C-c>` / `<C-w>` で点灯。
+- **Include / Exclude glob** — 対象・除外を glob で指定（カンマ区切りで複数）。既定は空。
+  検索範囲はプロジェクト全体（git ルート）。
+- **ライブ置換（`<C-d>`）** — 置換モードで置換語を打つと diff が即時更新。ファイル単位で
+  チェックし、mtime 競合検知付きで安全に一括適用（`<C-CR>`）。ripgrep の `--replace` を使うので
+  `$1` 等のキャプチャ参照も正確。
+- **快適なナビゲーション** — カーソルは操作可能な行にだけ吸着。`<Space>` でグループ折りたたみ。
+  結果からファイルへ飛ぶとパネルは自動で閉じ、条件は nvim を閉じるまで保持。
+- **quickfix 連携（`<C-q>`）** — 結果を quickfix へ送って既存ワークフローへ橋渡し。
+- **Selenized 準拠** — アクティブな colorscheme の `Normal` から配色を導出して馴染む（light / dark 両対応）。
 
 > 設計の背景と意思決定は [`DESIGN.md`](./DESIGN.md)、UI/UX の視覚プレビューは
 > [`mockup.html`](./mockup.html) を参照（どちらも旧称 `search-ui` 時代の名残がありますが
@@ -29,8 +33,6 @@ Zed / IntelliJ の *Find in Files* 級のプロジェクト検索・一括置換
   - 検索のみなら任意のバージョンで可
   - **一括置換のプレビューは ripgrep 15+** が必要（`rg --json` の `replacement`
     フィールドを利用するため。古い rg では置換時に明示的なエラーで通知します）
-- 任意: [fzf-lua](https://github.com/ibhagwan/fzf-lua)（スコープの任意パス選択 picker に利用）
-- 任意: [fd](https://github.com/sharkdp/fd)（パス picker が高速化。無ければ `find` を使用）
 
 ## インストール
 
@@ -39,7 +41,6 @@ Zed / IntelliJ の *Find in Files* 級のプロジェクト検索・一括置換
 ```lua
 {
   "power-finder.nvim",           -- ローカル開発中は dir = "/path/to/power-finder.nvim"
-  dependencies = { "ibhagwan/fzf-lua" }, -- 任意
   opts = {},                     -- setup() が呼ばれる
 }
 ```
@@ -77,18 +78,24 @@ require("power-finder").open_cword()
 
 | コンテキスト | キー | 動作 |
 | --- | --- | --- |
-| フォーム/結果 | `<C-r>` / `<C-c>` / `<C-w>` | regex / case / word トグル |
-| フォーム/結果 | `<C-s>` | スコープ picker |
-| フォーム/結果 | `<C-d>` | 置換プレビューへ |
+| フォーム/結果 | `<Tab>` / `<S-Tab>` | フォーム ⇄ 結果 のペイン切替 |
+| フォーム/結果 | `<C-r>` / `<C-c>` / `<C-w>` | regex / case（大小区別）/ word トグル |
+| フォーム/結果 | `<C-d>` | 置換モードの切替（入る / 検索へ戻る） |
 | フォーム | `<C-j>` | 結果ウィンドウへ移動 |
 | 結果 | `<C-k>` | フォームへ戻る |
-| 結果 | `<CR>` | 該当箇所を開く（プレビュー中は適用） |
+| 結果 | `<CR>` | 該当箇所を開いてパネルを閉じる |
 | 結果 | `<C-x>` / `<C-v>` | 分割 / 垂直分割で開く |
-| 結果 | `<Tab>` | ファイル折りたたみ（プレビュー中は対象トグル） |
+| 結果 | `<Space>` / `za` | ファイルグループの折りたたみ |
 | 結果 | `<C-q>` | quickfix へ送る |
-| プレビュー | `<Space>` | ファイルの適用対象トグル |
-| プレビュー | `<CR>` | チェック済みを一括適用 |
-| 全体 | `q` | 閉じる（プレビュー中は検索へ戻る） |
+| 置換モード | `<Space>` / `za` | 対象ファイルの diff を折りたたみ |
+| 置換モード | `<CR>` | 適用対象のチェック / 解除 |
+| 置換モード | `<C-a>` / `<C-x>` | 全チェック / 全解除 |
+| 置換モード | `<C-CR>` | チェック済みを一括適用 |
+| 全体 | `<Esc>` / `q` | 閉じる（置換モード中は検索へ戻る） |
+
+> フィールド間・結果内の選択は方向キー（`↑`/`↓`・`j`/`k`）で行います（`<Tab>` はペイン切替）。
+> `<C-CR>`（Ctrl+Enter）は、ターミナルが kitty keyboard protocol 対応（Ghostty 等）でないと
+> 通常の Enter と区別されない場合があります。
 
 ## 設定
 
@@ -115,7 +122,6 @@ require("power-finder").setup({
     word = false,
   },
   replace = { write_buffers = true },
-  fzf = { use_for_scope_picker = true },
   rg = "rg",
   mappings = { --[[ 上表のキーを個別に変更可 ]] },
 })
@@ -145,9 +151,9 @@ rust regex のキャプチャ展開が常に正確です。
 make test        # 全 spec を実行（tests/deps/plenary.nvim を自動取得）
 ```
 
-現在 **64 tests / 0 failures**。日本語（マルチバイト）のバイトオフセット、regex/リテラル、
-glob include/exclude、キャプチャ参照置換、mtime 競合検知、デバウンス、パネルの
-検索→折りたたみ→置換プレビュー→適用までを検証しています。
+現在 **71 tests / 0 failures**。日本語（マルチバイト）のバイトオフセット、regex/リテラル、
+case トグル、glob include/exclude、キャプチャ参照置換、mtime 競合検知、デバウンス、
+条件のセッション保持、カーソル吸着、パネルの検索→折りたたみ→ライブ置換→適用までを検証しています。
 
 > 補足: `PlenaryBustedDirectory` は本環境の headless 実行で子ジョブがハングしたため、
 > 同等の in-process ランナー（`tests/run.lua`）を使っています。
