@@ -1005,12 +1005,10 @@ function Panel:setup_mappings()
   self:map(both, { "n", "i" }, m.toggle_word, function()
     self_:toggle("word")
   end)
+  -- C-d toggles replace mode: enter from search, exit back to search.
   self:map(both, { "n", "i" }, m.replace_preview, function()
     if self_.mode == "preview" then
-      -- already replacing: jump to the Replace field to edit the term
-      self_:focus()
-      pcall(vim.api.nvim_win_set_cursor, self_.form_win, { 2, #(self_.values.replace or "") })
-      vim.cmd("startinsert!")
+      self_:exit_preview()
     else
       self_:enter_preview()
     end
