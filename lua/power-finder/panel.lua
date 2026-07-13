@@ -1,7 +1,11 @@
 -- The integrated finder panel: a form window (editable search conditions)
--- stacked over a read-only results window. Toggles/scope/replace are driven by
--- buffer-local mappings. Everything a mapping does is a Panel method, so the
--- same surface is exercised by the headless smoke tests.
+-- stacked over a read-only results window, styled after IntelliJ / Zed's
+-- "Find in Files". Toggles are shown as chips on the search row, keybindings
+-- live in the results window footer, and the whole panel paints an opaque
+-- background so it never washes out into the colorscheme.
+--
+-- Everything a mapping does is a Panel method, so the same surface is exercised
+-- by the headless smoke tests.
 local config = require("power-finder.config")
 local hl = require("power-finder.highlight")
 local util = require("power-finder.util")
@@ -14,7 +18,11 @@ local NS = vim.api.nvim_create_namespace("power_finder")
 
 local FIELDS = { "search", "replace", "include", "exclude" }
 local LABELS = { search = "Search", replace = "Replace", include = "Include", exclude = "Exclude" }
+local LABEL_W = 9 -- inline label column width (chars), incl. trailing padding
 local HEADER_ROWS = 2 -- status line + blank, before the file list
+
+local SCOPES = { "project", "cwd", "buffers", "path" }
+local SCOPE_LABEL = { project = "Project", cwd = "Cwd", buffers = "Buffers", path = "Path" }
 
 ---@class pf.Panel
 local Panel = {}
@@ -70,12 +78,13 @@ end
 local function geometry()
   local lay = config.options.layout
   local cols, rows = vim.o.columns, vim.o.lines
-  local W = math.max(40, math.floor(cols * lay.width))
-  local H = math.max(12, math.floor(rows * lay.height))
+  local W = math.max(48, math.floor(cols * lay.width))
+  local H = math.max(14, math.floor(rows * lay.height))
   local col0 = math.floor((cols - W) / 2)
   local row0 = math.max(0, math.floor((rows - H) / 2) - 1)
   local form_h = #FIELDS
-  local res_h = math.max(3, H - form_h - 5)
+  -- account for both borders (2 each) + the gap between windows + footer.
+  local res_h = math.max(4, H - form_h - 6)
   return {
     W = W,
     form = { row = row0, col = col0, width = W, height = form_h },
@@ -86,6 +95,7 @@ end
 function Panel:open()
   local g = geometry()
   local border = self.opts.layout.border
+  self.res_width = g.res.width
 
   self.form_buf = vim.api.nvim_create_buf(false, true)
   self.res_buf = vim.api.nvim_create_buf(false, true)
@@ -102,9 +112,10 @@ function Panel:open()
     width = g.form.width,
     height = g.form.height,
     border = border,
-    title = " Power Finder ",
+    title = self:form_title(),
     title_pos = "left",
     style = "minimal",
+    zindex = 60,
   })
   self.res_win = vim.api.nvim_open_win(self.res_buf, false, {
     relative = "editor",
@@ -114,12 +125,15 @@ function Panel:open()
     height = g.res.height,
     border = border,
     style = "minimal",
+    footer = self:footer_chunks(),
+    footer_pos = "center",
+    zindex = 60,
   })
-  vim.wo[self.res_win].cursorline = true
-  vim.wo[self.form_win].wrap = false
-  vim.wo[self.res_win].wrap = false
 
   hl.setup()
+  self:style_window(self.form_win, false)
+  self:style_window(self.res_win, true)
+
   self:render_form()
   self:setup_mappings()
   self:setup_autocmds()
@@ -128,9 +142,31 @@ function Panel:open()
   -- Start in insert mode at the end of the search field.
   vim.api.nvim_set_current_win(self.form_win)
   vim.api.nvim_win_set_cursor(self.form_win, { 1, #self.values.search })
+  vim.cmd("startinsert!")
   if self.values.search ~= "" then
     self:schedule_search()
   end
+end
+
+-- Force an opaque, panel-specific look regardless of the colorscheme: kill any
+-- inherited transparency (winblend) and remap Normal/border/cursorline.
+function Panel:style_window(win, is_results)
+  vim.wo[win].winblend = 0
+  vim.wo[win].wrap = false
+  vim.wo[win].number = false
+  vim.wo[win].relativenumber = false
+  vim.wo[win].signcolumn = "no"
+  vim.wo[win].cursorline = is_results
+  local wh =
+    "Normal:PowerFinderNormal,FloatBorder:PowerFinderBorder,FloatTitle:PowerFinderTitle,FloatFooter:PowerFinderFooter"
+  if is_results then
+    wh = wh .. ",CursorLine:PowerFinderCursorLine"
+  end
+  vim.wo[win].winhighlight = wh
+end
+
+function Panel:form_title()
+  return { { "  Power Finder ", "PowerFinderTitle" } }
 end
 
 function Panel:is_open()
@@ -145,6 +181,7 @@ end
 
 function Panel:close()
   self.searcher:cancel()
+  self.closing = true
   for _, w in ipairs({ self.form_win, self.res_win }) do
     if w and vim.api.nvim_win_is_valid(w) then
       vim.api.nvim_win_close(w, true)
@@ -167,30 +204,82 @@ function Panel:render_form()
   end
   vim.bo[self.form_buf].modifiable = true
   vim.api.nvim_buf_set_lines(self.form_buf, 0, -1, false, lines)
+  self:apply_form_marks()
+end
+
+local PLACEHOLDER = {
+  search = "type to search…",
+  replace = "empty — add text to enable replace",
+  include = "e.g. *.ts, src/**  (blank = all files)",
+  exclude = "e.g. **/node_modules/**",
+}
+
+-- The virtual chrome of the form: the left-hand field labels, per-field
+-- placeholders shown while a field is empty, and the toggle chips on the
+-- search row. Reads live buffer text so it stays correct on every keystroke.
+function Panel:apply_form_marks()
   vim.api.nvim_buf_clear_namespace(self.form_buf, NS, 0, -1)
+  local cur = vim.api.nvim_buf_get_lines(self.form_buf, 0, #FIELDS, false)
   for i, f in ipairs(FIELDS) do
+    local empty = (cur[i] or "") == ""
+    local hlg = (f == "search" and not empty) and "PowerFinderPrompt" or "PowerFinderLabel"
     vim.api.nvim_buf_set_extmark(self.form_buf, NS, i - 1, 0, {
-      virt_text = { { string.format("%-9s", LABELS[f]), "PowerFinderLabel" } },
+      virt_text = { { " " .. string.format("%-" .. (LABEL_W - 1) .. "s", LABELS[f]), hlg } },
       virt_text_pos = "inline",
       right_gravity = false,
     })
+    if empty and PLACEHOLDER[f] then
+      vim.api.nvim_buf_set_extmark(self.form_buf, NS, i - 1, 0, {
+        virt_text = { { PLACEHOLDER[f], "PowerFinderGhost" } },
+        virt_text_pos = "eol",
+      })
+    end
   end
+
+  -- toggle chips, right-aligned on the search row
+  local t = self.toggles
+  local case_label, case_hl
+  if t.case == "sensitive" then
+    case_label, case_hl = "Aa", "PowerFinderToggleOn"
+  elseif t.case == "smart" then
+    case_label, case_hl = "Aa", "PowerFinderToggleCase"
+  else
+    case_label, case_hl = "aa", "PowerFinderToggleOff"
+  end
+  local function chip(label, hlg)
+    return { " " .. label .. " ", hlg }
+  end
+  local gap = { " ", "PowerFinderNormal" }
+  vim.api.nvim_buf_set_extmark(self.form_buf, NS, 0, 0, {
+    virt_text = {
+      chip(".*", t.regex and "PowerFinderToggleOn" or "PowerFinderToggleOff"),
+      gap,
+      chip(case_label, case_hl),
+      gap,
+      chip("W", t.word and "PowerFinderToggleOn" or "PowerFinderToggleOff"),
+      { " ", "PowerFinderNormal" },
+    },
+    virt_text_pos = "right_align",
+  })
 end
 
--- Keep the form at exactly #FIELDS lines even if the user hits <CR>.
+-- Keep the form at exactly #FIELDS lines even if a structural edit slips
+-- through the guards. Returns true if it had to repair the buffer.
 function Panel:normalize_form()
   local n = vim.api.nvim_buf_line_count(self.form_buf)
-  if n ~= #FIELDS then
-    local lines = vim.api.nvim_buf_get_lines(self.form_buf, 0, -1, false)
-    -- collapse any accidental newlines: keep first #FIELDS non-structural lines
-    while #lines > #FIELDS do
-      table.remove(lines)
-    end
-    while #lines < #FIELDS do
-      lines[#lines + 1] = ""
-    end
-    vim.api.nvim_buf_set_lines(self.form_buf, 0, -1, false, lines)
+  if n == #FIELDS then
+    return false
   end
+  local lines = vim.api.nvim_buf_get_lines(self.form_buf, 0, -1, false)
+  while #lines > #FIELDS do
+    table.remove(lines)
+  end
+  while #lines < #FIELDS do
+    lines[#lines + 1] = ""
+  end
+  vim.bo[self.form_buf].modifiable = true
+  vim.api.nvim_buf_set_lines(self.form_buf, 0, -1, false, lines)
+  return true
 end
 
 function Panel:read_form()
@@ -199,6 +288,17 @@ function Panel:read_form()
   for i, f in ipairs(FIELDS) do
     self.values[f] = lines[i] or ""
   end
+end
+
+-- Jump the cursor to another form field (Tab / Shift-Tab), wrapping around.
+function Panel:move_field(delta)
+  if not (self.form_win and vim.api.nvim_win_is_valid(self.form_win)) then
+    return
+  end
+  local row = vim.api.nvim_win_get_cursor(self.form_win)[1]
+  local nr = ((row - 1 + delta) % #FIELDS) + 1
+  local line = vim.api.nvim_buf_get_lines(self.form_buf, nr - 1, nr, false)[1] or ""
+  vim.api.nvim_win_set_cursor(self.form_win, { nr, #line })
 end
 
 ------------------------------------------------------------------------------
@@ -229,7 +329,9 @@ function Panel:schedule_search()
   end
   local q = self:gather_query()
   self.searcher:request(q, function(err, results)
-    if not self:is_open() then
+    -- Guard against a late result landing after we've entered replace preview
+    -- (it would otherwise clobber the diff view).
+    if not self:is_open() or self.mode ~= "search" then
       return
     end
     if err then
@@ -245,43 +347,110 @@ end
 -- results rendering
 ------------------------------------------------------------------------------
 
-function Panel:status_text()
-  local t = self.toggles
-  local flags = string.format("[regex:%s case:%s word:%s]", t.regex and "on" or "off", t.case, t.word and "on" or "off")
-  local scope = "scope:" .. self.scope
-  if self.results.error then
-    return "⚠ " .. self.results.error .. "   " .. flags
+-- A file's path for display: relative to the search root when possible, then
+-- home-relative, then shortened to keep the tail (filename) visible. The real
+-- path stays on the item for opening.
+function Panel:display_path(path)
+  local base = vim.fn.fnamemodify(self.cwd, ":p")
+  if base:sub(-1) ~= "/" then
+    base = base .. "/"
   end
+  local full = vim.fn.fnamemodify(path, ":p")
+  local rel
+  if full:sub(1, #base) == base then
+    rel = full:sub(#base + 1)
+  else
+    rel = vim.fn.fnamemodify(path, ":~")
+  end
+  if rel == "" then
+    rel = path
+  end
+  return util.shorten(rel, 72)
+end
+
+-- Build a status line as text + a list of {s, e, hl} byte-range overlays.
+function Panel:status_segments()
+  local parts, marks = {}, {}
+  local col = 0
+  local function add(text, hlg)
+    parts[#parts + 1] = text
+    if hlg then
+      marks[#marks + 1] = { s = col, e = col + #text, hl = hlg }
+    end
+    col = col + #text
+  end
+
+  if self.results.error then
+    add(" ⚠ ", "PowerFinderError")
+    add(self.results.error, "PowerFinderError")
+    return table.concat(parts), marks
+  end
+
   local n = self.results.total or 0
   local files = #(self.results.files or {})
-  local trunc = self.results.truncated and " (truncated)" or ""
-  return string.format("%d matches · %d files%s   %s   %s", n, files, trunc, flags, scope)
+  add(" ")
+  add(tostring(n), "PowerFinderStatusNum")
+  add(string.format(" match%s · ", n == 1 and "" or "es"))
+  add(tostring(files), "PowerFinderStatusNum")
+  add(" file" .. (files == 1 and "" or "s"))
+  if self.results.truncated then
+    add("  (truncated)", "PowerFinderStatusInfo")
+  end
+  add("    scope: ")
+  add(SCOPE_LABEL[self.scope] or self.scope, "PowerFinderStatusScope")
+  return table.concat(parts), marks
 end
 
 function Panel:render_results()
-  local lines = { self:status_text(), "" }
+  local status, status_marks = self:status_segments()
+  local lines = { status, "" }
   local index = {} -- res line (1-based) -> item
   index[1] = { kind = "status" }
   index[2] = { kind = "blank" }
 
   local marks = {} -- {row0, col0, col1, hl}
-  for _, f in ipairs(self.results.files or {}) do
-    local disc = f.collapsed and "▶" or "▼"
-    local header = string.format("%s %s  (%d)", disc, f.path, #f.matches)
+  local files = self.results.files or {}
+
+  if #files == 0 then
+    local hint
+    if not self.results.error then
+      hint = (self.values.search == "" and "   Type in the Search field to begin…" or "   No matches.")
+    end
+    if hint then
+      lines[#lines + 1] = ""
+      lines[#lines + 1] = hint
+      index[#lines] = { kind = "hint" }
+      marks[#marks + 1] = { row = #lines - 1, whole = true, hl = "PowerFinderGhost" }
+    end
+  end
+
+  for _, f in ipairs(files) do
+    local disc = f.collapsed and "▸" or "▾"
+    local header = string.format(" %s %s  (%d)", disc, self:display_path(f.path), #f.matches)
     lines[#lines + 1] = header
     index[#lines] = { kind = "file", file = f }
+    local row = #lines - 1
+    marks[#marks + 1] = { row = row, whole = true, hl = "PowerFinderFile" }
+    marks[#marks + 1] = { row = row, col = 1, col_end = 4, hl = "PowerFinderDisc" }
+    -- dim the "(n)" count
+    local cs = header:find("%(%d+%)$")
+    if cs then
+      marks[#marks + 1] = { row = row, col = cs - 1, col_end = #header, hl = "PowerFinderCount" }
+    end
     if not f.collapsed then
       for _, m in ipairs(f.matches) do
-        local ln = string.format("%5d  %s", m.lnum, m.text)
+        local ln = string.format("%6d  %s", m.lnum, m.text)
         lines[#lines + 1] = ln
         index[#lines] = { kind = "match", file = f, match = m }
-        -- highlight each submatch within the printed line
-        local prefix = 7 -- "%5d" + two spaces
+        local mrow = #lines - 1
+        local prefix = 8 -- "%6d" + two spaces
+        marks[#marks + 1] = { row = mrow, col = 0, col_end = 6, hl = "PowerFinderLineNr" }
         for _, sm in ipairs(m.submatches) do
           marks[#marks + 1] = {
-            row = #lines - 1,
+            row = mrow,
             col = prefix + sm.start,
             col_end = prefix + sm.finish,
+            hl = "PowerFinderMatch",
           }
         end
       end
@@ -292,30 +461,127 @@ function Panel:render_results()
   vim.bo[self.res_buf].modifiable = true
   vim.api.nvim_buf_set_lines(self.res_buf, 0, -1, false, lines)
   vim.api.nvim_buf_clear_namespace(self.res_buf, NS, 0, -1)
-  -- status line highlight
+
+  -- status line background + segment overlays
   vim.api.nvim_buf_set_extmark(self.res_buf, NS, 0, 0, {
     end_row = 1,
     hl_group = "PowerFinderStatus",
     hl_eol = true,
   })
-  for i = 3, #lines do
-    if index[i] and index[i].kind == "file" then
-      vim.api.nvim_buf_set_extmark(self.res_buf, NS, i - 1, 0, {
-        end_row = i,
-        hl_group = "PowerFinderFile",
-        hl_eol = false,
+  for _, mk in ipairs(status_marks) do
+    pcall(vim.api.nvim_buf_set_extmark, self.res_buf, NS, 0, mk.s, {
+      end_col = mk.e,
+      hl_group = mk.hl,
+    })
+  end
+
+  self:apply_marks(marks)
+  vim.bo[self.res_buf].modifiable = false
+end
+
+-- Apply a list of highlight marks. `whole` spans the entire line (hl_eol),
+-- otherwise [col, col_end) on `row`.
+function Panel:apply_marks(marks)
+  for _, mk in ipairs(marks) do
+    if mk.whole then
+      pcall(vim.api.nvim_buf_set_extmark, self.res_buf, NS, mk.row, 0, {
+        end_row = mk.row + 1,
         end_col = 0,
+        hl_group = mk.hl,
+        hl_eol = true,
+      })
+    else
+      pcall(vim.api.nvim_buf_set_extmark, self.res_buf, NS, mk.row, mk.col, {
+        end_row = mk.row,
+        end_col = mk.col_end,
+        hl_group = mk.hl,
       })
     end
   end
-  for _, mk in ipairs(marks) do
-    pcall(vim.api.nvim_buf_set_extmark, self.res_buf, NS, mk.row, mk.col, {
-      end_row = mk.row,
-      end_col = mk.col_end,
-      hl_group = "PowerFinderMatch",
-    })
+end
+
+------------------------------------------------------------------------------
+-- footer / keybar
+------------------------------------------------------------------------------
+
+local function disp(key)
+  if not key then
+    return "?"
   end
-  vim.bo[self.res_buf].modifiable = false
+  return (key:gsub("[<>]", ""))
+end
+
+-- Assemble the keybar, degrading gracefully so it never overflows (and gets
+-- truncated with an ugly "<") on a narrow window: full labels first, then
+-- keys only, then fewer keys.
+function Panel:footer_chunks()
+  local m = self.opts.mappings
+  local items
+  if self.mode == "preview" then
+    items = {
+      { disp(m.open), "apply" },
+      { "Space", "toggle" },
+      { "C-a", "all" },
+      { "C-x", "none" },
+      { "Esc", "back" },
+    }
+  else
+    items = {
+      { disp(m.fold), "fold" },
+      { disp(m.toggle_regex), "regex" },
+      { disp(m.toggle_case), "case" },
+      { disp(m.toggle_word), "word" },
+      { disp(m.scope_picker), "scope" },
+      { disp(m.replace_preview), "replace" },
+      { disp(m.to_quickfix), "qf" },
+      { "Esc", "close" },
+    }
+  end
+
+  local avail = (self.res_width or 80) - 6 -- corners + a little breathing room
+
+  local function build(list, with_desc)
+    local chunks, width = {}, 0
+    local function push(text, hlg)
+      chunks[#chunks + 1] = { text, hlg }
+      width = width + vim.fn.strdisplaywidth(text)
+    end
+    push(" ", "PowerFinderFooter")
+    for i, kv in ipairs(list) do
+      if i > 1 then
+        push(" · ", "PowerFinderFooter")
+      end
+      push(kv[1], "PowerFinderKey")
+      if with_desc then
+        push(" " .. kv[2], "PowerFinderKeyDesc")
+      end
+    end
+    push(" ", "PowerFinderFooter")
+    return chunks, width
+  end
+
+  local chunks, width = build(items, true)
+  if width <= avail then
+    return chunks
+  end
+  chunks, width = build(items, false) -- keys only
+  local list = vim.deepcopy(items)
+  while width > avail and #list > 3 do
+    table.remove(list) -- drop from the end (least critical)
+    chunks, width = build(list, false)
+  end
+  return chunks
+end
+
+function Panel:update_footer()
+  if not (self.res_win and vim.api.nvim_win_is_valid(self.res_win)) then
+    return
+  end
+  local cfg = vim.api.nvim_win_get_config(self.res_win)
+  self.res_width = cfg.width or self.res_width
+  cfg.footer = self:footer_chunks()
+  cfg.footer_pos = "center"
+  pcall(vim.api.nvim_win_set_config, self.res_win, cfg)
 end
 
 ------------------------------------------------------------------------------
@@ -378,6 +644,7 @@ function Panel:toggle(name)
     local order = { smart = "sensitive", sensitive = "ignore", ignore = "smart" }
     self.toggles.case = order[self.toggles.case] or "smart"
   end
+  self:apply_form_marks()
   self:schedule_search()
 end
 
@@ -385,6 +652,9 @@ function Panel:set_scope(scope, paths)
   self.scope = scope
   self.scope_paths = paths
   self:schedule_search()
+  if self.mode == "search" then
+    self:render_results()
+  end
 end
 
 function Panel:pick_scope()
@@ -393,7 +663,12 @@ function Panel:pick_scope()
     fzf.pick_scope(self)
     return
   end
-  vim.ui.select({ "project", "cwd", "buffers", "path" }, { prompt = "Search scope" }, function(choice)
+  vim.ui.select(SCOPES, {
+    prompt = "Search scope",
+    format_item = function(s)
+      return SCOPE_LABEL[s] or s
+    end,
+  }, function(choice)
     if not choice then
       return
     end
@@ -455,6 +730,8 @@ function Panel:enter_preview()
     self.mode = "preview"
     self.preview = preview
     self:render_preview()
+    self:update_footer()
+    vim.cmd("stopinsert")
     vim.api.nvim_set_current_win(self.res_win)
     pcall(vim.api.nvim_win_set_cursor, self.res_win, { HEADER_ROWS + 1, 0 })
   end)
@@ -470,19 +747,43 @@ function Panel:render_preview()
   local index = { [1] = { kind = "phead" }, [2] = { kind = "blank" } }
   local marks = {}
 
+  -- color the from/to terms in the header
+  marks[#marks + 1] = { row = 0, col = 9, col_end = 9 + #from, hl = "PowerFinderReplaceFrom" }
+  local to_at = 9 + #from + #" → "
+  marks[#marks + 1] = { row = 0, col = to_at, col_end = to_at + #to, hl = "PowerFinderReplaceTo" }
+
   for _, f in ipairs(self.preview) do
-    local box = f.selected and "[x]" or "[ ]"
-    lines[#lines + 1] = string.format("%s %s  (%d)", box, f.path, f.changes)
+    local box = f.selected and "✓" or "○"
+    lines[#lines + 1] = string.format(" %s %s  (%d)", box, self:display_path(f.path), f.changes)
     index[#lines] = { kind = "pfile", file = f }
-    local hlname = f.selected and "PowerFinderSelected" or "PowerFinderDeselected"
-    marks[#marks + 1] = { row = #lines - 1, hl = hlname, whole = true }
+    local row = #lines - 1
+    marks[#marks + 1] =
+      { row = row, whole = true, hl = f.selected and "PowerFinderSelected" or "PowerFinderDeselected" }
+    marks[#marks + 1] =
+      { row = row, col = 1, col_end = 4, hl = f.selected and "PowerFinderCheckbox" or "PowerFinderCheckboxOff" }
+    if not f.selected then
+      lines[#lines] = lines[#lines] .. "  — excluded"
+    end
+    -- Always show the hunks; dim them when the file is deselected (mockup UX).
     for _, l in ipairs(f.lines) do
-      lines[#lines + 1] = string.format("%5d -%s", l.lnum, l.old)
+      lines[#lines + 1] = string.format("%6d -%s", l.lnum, l.old)
       index[#lines] = { kind = "pdel" }
-      marks[#marks + 1] = { row = #lines - 1, hl = "PowerFinderDiffDelete", whole = true }
-      lines[#lines + 1] = string.format("      +%s", l.new)
+      local drow = #lines - 1
+      if f.selected then
+        marks[#marks + 1] = { row = drow, whole = true, hl = "PowerFinderDiffDelete" }
+        marks[#marks + 1] = { row = drow, col = 6, col_end = 8, hl = "PowerFinderDiffDelSign" }
+      else
+        marks[#marks + 1] = { row = drow, whole = true, hl = "PowerFinderDeselected" }
+      end
+      lines[#lines + 1] = string.format("       +%s", l.new)
       index[#lines] = { kind = "padd" }
-      marks[#marks + 1] = { row = #lines - 1, hl = "PowerFinderDiffAdd", whole = true }
+      local arow = #lines - 1
+      if f.selected then
+        marks[#marks + 1] = { row = arow, whole = true, hl = "PowerFinderDiffAdd" }
+        marks[#marks + 1] = { row = arow, col = 6, col_end = 8, hl = "PowerFinderDiffAddSign" }
+      else
+        marks[#marks + 1] = { row = arow, whole = true, hl = "PowerFinderDeselected" }
+      end
     end
   end
 
@@ -490,14 +791,7 @@ function Panel:render_preview()
   vim.bo[self.res_buf].modifiable = true
   vim.api.nvim_buf_set_lines(self.res_buf, 0, -1, false, lines)
   vim.api.nvim_buf_clear_namespace(self.res_buf, NS, 0, -1)
-  for _, mk in ipairs(marks) do
-    pcall(vim.api.nvim_buf_set_extmark, self.res_buf, NS, mk.row, 0, {
-      end_row = mk.row + 1,
-      end_col = 0,
-      hl_group = mk.hl,
-      hl_eol = true,
-    })
-  end
+  self:apply_marks(marks)
   vim.bo[self.res_buf].modifiable = false
 end
 
@@ -533,6 +827,7 @@ function Panel:exit_preview()
   self.mode = "search"
   self.preview = nil
   self:render_results()
+  self:update_footer()
   self:focus()
 end
 
@@ -554,13 +849,16 @@ function Panel:setup_mappings()
   local both = { self.form_buf, self.res_buf }
   local self_ = self
 
-  self:map(both, { "n" }, m.close, function()
+  local function close_or_back()
     if self_.mode == "preview" then
       self_:exit_preview()
     else
       self_:close()
     end
-  end)
+  end
+  self:map(both, { "n" }, m.close, close_or_back)
+  self:map(both, { "n" }, "<Esc>", close_or_back)
+
   self:map(both, { "n", "i" }, m.toggle_regex, function()
     self_:toggle("regex")
   end)
@@ -577,16 +875,36 @@ function Panel:setup_mappings()
     self_:enter_preview()
   end)
 
-  -- results/preview-only
+  -- form editing guards ------------------------------------------------
+  -- Block backspace at column 1 so a field never merges into the one above
+  -- (the old "layout collapses on backspace" bug). Needs expr so we can
+  -- conditionally swallow the key.
+  vim.keymap.set("i", "<BS>", function()
+    return vim.fn.col(".") <= 1 and "" or "<BS>"
+  end, { buffer = self.form_buf, expr = true, replace_keycodes = true, nowait = true, silent = true })
+  -- <CR> in the form jumps to results instead of inserting a newline.
+  self:map({ self.form_buf }, { "i", "n" }, "<CR>", function()
+    self_:goto_results()
+  end)
+  -- Tab / Shift-Tab move between fields (never insert a literal tab).
+  self:map({ self.form_buf }, { "i", "n" }, m.next_field, function()
+    self_:move_field(1)
+  end)
+  self:map({ self.form_buf }, { "i", "n" }, m.prev_field, function()
+    self_:move_field(-1)
+  end)
+  -- Block normal-mode line-structure edits in the form.
+  for _, lhs in ipairs({ "o", "O", "J", "dd" }) do
+    self:map({ self.form_buf }, { "n" }, lhs, function() end)
+  end
+
+  -- results/preview-only ------------------------------------------------
   self:map({ self.res_buf }, { "n" }, m.open, function()
     if self_.mode == "preview" then
       self_:apply()
     else
       self_:open_selected("edit")
     end
-  end)
-  self:map({ self.res_buf }, { "n" }, m.open_split, function()
-    self_:open_selected("split")
   end)
   self:map({ self.res_buf }, { "n" }, m.open_vsplit, function()
     self_:open_selected("vsplit")
@@ -603,20 +921,37 @@ function Panel:setup_mappings()
       self_:toggle_preview_file()
     end
   end)
+  self:map({ self.res_buf }, { "n" }, "<C-a>", function()
+    if self_.mode == "preview" then
+      self_:select_all(true)
+    end
+  end)
+  self:map({ self.res_buf }, { "n" }, m.open_split, function()
+    if self_.mode == "preview" then
+      self_:select_all(false)
+    else
+      self_:open_selected("split")
+    end
+  end)
   self:map({ self.res_buf }, { "n" }, m.to_quickfix, function()
     self_:to_quickfix()
   end)
 
   -- window hop: from form, <C-j> to results; from results, <C-k> to form
   self:map({ self.form_buf }, { "n", "i" }, "<C-j>", function()
-    if self_.res_win and vim.api.nvim_win_is_valid(self_.res_win) then
-      vim.cmd("stopinsert")
-      vim.api.nvim_set_current_win(self_.res_win)
-    end
+    self_:goto_results()
   end)
   self:map({ self.res_buf }, { "n" }, "<C-k>", function()
     self_:focus()
+    vim.cmd("startinsert!")
   end)
+end
+
+function Panel:goto_results()
+  if self.res_win and vim.api.nvim_win_is_valid(self.res_win) then
+    vim.cmd("stopinsert")
+    vim.api.nvim_set_current_win(self.res_win)
+  end
 end
 
 function Panel:setup_autocmds()
@@ -625,6 +960,10 @@ function Panel:setup_autocmds()
     group = grp,
     buffer = self.form_buf,
     callback = function()
+      self:normalize_form()
+      -- Refresh labels/placeholders/chips every keystroke so the empty-field
+      -- placeholders appear and disappear as the user types.
+      self:apply_form_marks()
       self:schedule_search()
     end,
   })
@@ -633,7 +972,7 @@ function Panel:setup_autocmds()
     group = grp,
     callback = function(ev)
       local w = tonumber(ev.match)
-      if w == self.form_win or w == self.res_win then
+      if not self.closing and (w == self.form_win or w == self.res_win) then
         vim.schedule(function()
           self:close()
         end)
