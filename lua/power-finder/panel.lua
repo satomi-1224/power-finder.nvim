@@ -468,8 +468,6 @@ function Panel:status_segments()
   if self.results.truncated then
     add("  (truncated)", "PowerFinderStatusInfo")
   end
-  add("    scope: ")
-  add(SCOPE_LABEL[self.scope] or self.scope, "PowerFinderStatusScope")
   return table.concat(parts), marks
 end
 
@@ -606,7 +604,6 @@ function Panel:footer_chunks()
       { disp(m.toggle_regex), "regex" },
       { disp(m.toggle_case), "case" },
       { disp(m.toggle_word), "word" },
-      { disp(m.scope_picker), "scope" },
       { disp(m.replace_preview), "replace" },
       { "Esc", "close" },
     }
@@ -1011,9 +1008,6 @@ function Panel:setup_mappings()
   end)
   self:map(both, { "n", "i" }, m.toggle_word, function()
     self_:toggle("word")
-  end)
-  self:map(both, { "n", "i" }, m.scope_picker, function()
-    self_:pick_scope()
   end)
   self:map(both, { "n", "i" }, m.replace_preview, function()
     if self_.mode == "preview" then
