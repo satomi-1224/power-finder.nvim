@@ -1,4 +1,6 @@
-.PHONY: test test-file deps lint clean
+.PHONY: test deps fmt lint clean
+
+STYLUA_TARGETS := lua/ plugin/ tests/
 
 PLENARY := tests/deps/plenary.nvim
 
@@ -12,6 +14,14 @@ $(PLENARY):
 test: deps
 	nvim --headless --noplugin -u tests/minimal_init.lua \
 		-l tests/run.lua
+
+# Format Lua sources in place (requires stylua).
+fmt:
+	stylua $(STYLUA_TARGETS)
+
+# Verify formatting without writing (matches the CI lint job).
+lint:
+	stylua --check $(STYLUA_TARGETS)
 
 clean:
 	rm -rf $(PLENARY)

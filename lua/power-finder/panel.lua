@@ -247,12 +247,7 @@ end
 
 function Panel:status_text()
   local t = self.toggles
-  local flags = string.format(
-    "[regex:%s case:%s word:%s]",
-    t.regex and "on" or "off",
-    t.case,
-    t.word and "on" or "off"
-  )
+  local flags = string.format("[regex:%s case:%s word:%s]", t.regex and "on" or "off", t.case, t.word and "on" or "off")
   local scope = "scope:" .. self.scope
   if self.results.error then
     return "⚠ " .. self.results.error .. "   " .. flags
@@ -469,14 +464,8 @@ function Panel:render_preview()
   local from = self.values.search
   local to = self.values.replace
   local s = replace.summarize(self.preview)
-  local head = string.format(
-    "Replace: %s → %s    apply %d/%d files · %d changes",
-    from,
-    to,
-    s.files,
-    s.total_files,
-    s.changes
-  )
+  local head =
+    string.format("Replace: %s → %s    apply %d/%d files · %d changes", from, to, s.files, s.total_files, s.changes)
   local lines = { head, "" }
   local index = { [1] = { kind = "phead" }, [2] = { kind = "blank" } }
   local marks = {}

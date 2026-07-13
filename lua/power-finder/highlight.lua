@@ -23,8 +23,7 @@ function M.setup()
   for name, val in pairs(M.groups) do
     -- default = true: don't clobber a group the user already defined.
     local ok_existing = pcall(vim.api.nvim_get_hl, 0, { name = name })
-    local defined = ok_existing
-      and next(vim.api.nvim_get_hl(0, { name = name, link = false })) ~= nil
+    local defined = ok_existing and next(vim.api.nvim_get_hl(0, { name = name, link = false })) ~= nil
     if not defined then
       vim.api.nvim_set_hl(0, name, vim.tbl_extend("keep", { default = true }, val))
     end

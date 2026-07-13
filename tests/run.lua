@@ -54,7 +54,9 @@ function _G.it(name, fn)
     io.write("       " .. tostring(err):gsub("\n", "\n       ") .. "\n")
   end
 end
-_G.pending = function(name) io.write("skip - " .. name .. "\n") end
+_G.pending = function(name)
+  io.write("skip - " .. name .. "\n")
+end
 
 -- Discover and run specs.
 local specs = vim.fn.glob(here .. "/spec/*.lua", false, true)

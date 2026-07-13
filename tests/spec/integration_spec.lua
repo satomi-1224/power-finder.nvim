@@ -80,11 +80,7 @@ describe("integration: search.run", function()
       ["node_modules/dep.ts"] = "handleRequest\n",
     })
     local err, results = await(function(cb)
-      search.run(
-        { query = "handleRequest", paths = { dir }, exclude_globs = { "**/node_modules/**" } },
-        {},
-        cb
-      )
+      search.run({ query = "handleRequest", paths = { dir }, exclude_globs = { "**/node_modules/**" } }, {}, cb)
     end)
     assert.is_nil(err)
     assert.equals(1, #results.files)
@@ -129,11 +125,7 @@ describe("integration: replace pipeline", function()
     local dir = make_tree({ ["a.ts"] = "handleRequest(1)\nhandleResponse(2)\n" })
     -- $1 capture reference handled by ripgrep's rust regex.
     local err, preview = await(function(cb)
-      replace.gather_preview(
-        { query = "handle(\\w+)", replace = "process$1", paths = { dir } },
-        {},
-        cb
-      )
+      replace.gather_preview({ query = "handle(\\w+)", replace = "process$1", paths = { dir } }, {}, cb)
     end)
     assert.is_nil(err)
     assert.equals(1, #preview)

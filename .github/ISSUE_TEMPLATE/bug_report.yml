@@ -1,0 +1,41 @@
+name: Bug report
+description: 不具合を報告する / Report a bug
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        報告ありがとうございます。再現手順があると調査がとても早くなります。
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 現象 / What happened
+      description: 何が起きたか、期待した挙動との差を書いてください。
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 再現手順 / Steps to reproduce
+      placeholder: |
+        1. :PowerFinder を開く
+        2. Search に「...」を入力
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: 環境 / Environment
+      description: "`nvim --version | head -1` と `rg --version | head -1` の出力を貼ってください。"
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: 最小設定 / Minimal config
+      description: setup() に渡した opts があれば貼ってください。
+      render: lua
+    validations:
+      required: false

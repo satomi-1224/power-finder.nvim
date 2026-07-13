@@ -1,5 +1,9 @@
 # power-finder.nvim
 
+[![CI](https://github.com/satomi-1224/power-finder.nvim/actions/workflows/ci.yml/badge.svg)](https://github.com/satomi-1224/power-finder.nvim/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+![Neovim](https://img.shields.io/badge/Neovim-0.10%2B-57A143?logo=neovim&logoColor=white)
+
 Zed / IntelliJ の *Find in Files* 級のプロジェクト検索・一括置換を Neovim ネイティブで。
 構造化フォームで条件を組み、ライブで結果を見て、diff を確認してから安全に置換します。
 

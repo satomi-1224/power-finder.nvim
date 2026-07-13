@@ -93,8 +93,7 @@ function M.parse(lines, opts)
         elseif t == "summary" then
           local st = ev.data and ev.data.stats
           if st and st.elapsed then
-            elapsed_us = math.floor((st.elapsed.nanos or 0) / 1000)
-              + (st.elapsed.secs or 0) * 1000000
+            elapsed_us = math.floor((st.elapsed.nanos or 0) / 1000) + (st.elapsed.secs or 0) * 1000000
           end
         end
       end
