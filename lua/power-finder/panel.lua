@@ -50,19 +50,25 @@ function Panel:init(opts)
   self.opts = config.options
   opts = opts or {}
   local d = self.opts.defaults
+  -- Reopening reuses the conditions from the previous panel for the rest of the
+  -- nvim session (M._last_state), unless the caller overrides a field (e.g.
+  -- open_cword/open_visual pass a fresh query). Cleared when nvim exits.
+  local last = M._last_state or {}
+  local lv = last.values or {}
   self.values = {
-    search = opts.query or "",
-    replace = "",
-    include = d.include,
-    exclude = d.exclude,
+    search = opts.query or lv.search or "",
+    replace = lv.replace or "",
+    include = lv.include or d.include,
+    exclude = lv.exclude or d.exclude,
   }
-  self.toggles = {
-    regex = d.regex,
-    case = self.opts.search.case,
-    word = d.word,
-  }
-  self.scope = opts.scope or d.scope
-  self.scope_paths = opts.scope_paths
+  self.toggles = last.toggles and vim.deepcopy(last.toggles)
+    or {
+      regex = d.regex,
+      case = self.opts.search.case,
+      word = d.word,
+    }
+  self.scope = opts.scope or last.scope or d.scope
+  self.scope_paths = opts.scope_paths or last.scope_paths
   self.cwd = opts.cwd or vim.fn.getcwd()
   self.mode = "search"
   self.results = { files = {}, total = 0, truncated = false }
@@ -179,9 +185,26 @@ function Panel:focus()
   end
 end
 
+-- Snapshot the current conditions into the module so the next open() restores
+-- them (persists until nvim exits).
+function Panel:save_state()
+  if self.form_buf and vim.api.nvim_buf_is_valid(self.form_buf) then
+    pcall(function()
+      self:read_form()
+    end)
+  end
+  M._last_state = {
+    values = vim.deepcopy(self.values),
+    toggles = vim.deepcopy(self.toggles),
+    scope = self.scope,
+    scope_paths = self.scope_paths and vim.deepcopy(self.scope_paths) or nil,
+  }
+end
+
 function Panel:close()
   self.searcher:cancel()
   self.closing = true
+  self:save_state()
   for _, w in ipairs({ self.form_win, self.res_win }) do
     if w and vim.api.nvim_win_is_valid(w) then
       vim.api.nvim_win_close(w, true)
@@ -607,7 +630,9 @@ function Panel:open_selected(how)
   if item.kind == "match" and item.match.submatches[1] then
     col = item.match.submatches[1].start
   end
-  -- jump to a normal window (leave the finder open above it)
+  -- Close the finder first (saving state), then jump. Jumping first would make
+  -- pick_target_window race with the closing floats.
+  self:close()
   local target = self:pick_target_window()
   vim.api.nvim_set_current_win(target)
   local cmd = ({ edit = "edit", split = "split", vsplit = "vsplit" })[how] or "edit"

@@ -55,6 +55,9 @@ describe("panel", function()
         panel_mod._current:close()
       end)
     end
+    -- Conditions persist across opens for the nvim session; clear between tests
+    -- so each test starts from defaults.
+    panel_mod._last_state = nil
   end)
 
   it("opens two valid floating windows", function()
@@ -154,5 +157,39 @@ describe("panel", function()
     local qf = vim.fn.getqflist()
     assert.equals(2, #qf)
     pcall(vim.cmd, "cclose")
+  end)
+
+  it("remembers conditions across opens for the session", function()
+    local dir = make_tree({ ["a.ts"] = "handleRequest\n" })
+    local p = panel_mod.open({ cwd = dir, scope = "path", scope_paths = { dir } })
+    p:_set_values({ search = "handleRequest", include = "*.ts" })
+    p:toggle("word")
+    local word = p.toggles.word
+    p:close()
+
+    local p2 = panel_mod.open({ cwd = dir, scope = "path", scope_paths = { dir } })
+    assert.equals("handleRequest", p2.values.search)
+    assert.equals("*.ts", p2.values.include)
+    assert.equals(word, p2.toggles.word)
+    p2:close()
+  end)
+
+  it("closes the panel after jumping to a match", function()
+    local dir = make_tree({ ["a.ts"] = "handleRequest\n" })
+    local p = panel_mod.open({ cwd = dir, scope = "path", scope_paths = { dir } })
+    p:_set_values({ search = "handleRequest" })
+    local done = false
+    p:_search_now(function()
+      done = true
+    end)
+    wait_until(function()
+      return done
+    end)
+    -- line 4 is the first match (1 status, 2 blank, 3 file header, 4 match)
+    pcall(vim.api.nvim_win_set_cursor, p.res_win, { 4, 0 })
+    p:open_selected("edit")
+    assert.is_false(p:is_open())
+    assert.equals("a.ts", vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":t"))
+    pcall(vim.cmd, "bwipeout!")
   end)
 end)
