@@ -132,10 +132,10 @@ diff を確認して一括置換する」という、IDE 級の検索体験を N
 │   102 │  const h = handleRequest                                 │
 ╰───────────────────────────────────────────────────────────────╯
   <CR> open  ·  <Tab> fold  ·  <C-r> regex  ·  <C-c> case  ·  <C-w> word
-  <C-s> scope picker  ·  <M-CR> replace-preview  ·  q close
+  <C-s> scope picker  ·  <C-d> replace-preview  ·  q close
 ```
 
-### 置換 diff プレビュー（`<M-CR>` で遷移）
+### 置換 diff プレビュー（`<C-d>` で遷移）
 
 ```
 ╭─ Replace Preview: handleRequest → dispatchRequest ───────────╮
@@ -218,7 +218,7 @@ diff を確認して一括置換する」という、IDE 級の検索体験を N
 
 ## 7. 置換ワークフロー（replace.lua）
 
-1. フォームの `Replace` 欄に文字列を入れて `<M-CR>` → プレビュー生成。
+1. フォームの `Replace` 欄に文字列を入れて `<C-d>` → プレビュー生成。
 2. 置換文字列の解釈:
    - regex ON なら `$1`/`${name}` などのキャプチャ参照を許可（rg の `--replace` 相当のロジックを
      自前実装、または各マッチに対し Lua/vim regex で算出）。
@@ -248,7 +248,7 @@ diff を確認して一括置換する」という、IDE 級の検索体験を N
 | 結果 | `<CR>` | 該当箇所を開く（パネルは開いたまま or 閉じる: 設定） |
 | 結果 | `<Tab>` | ファイル折りたたみトグル |
 | 結果 | `<C-q>` | 結果を quickfix に送る（既存ワークフローとの橋渡し） |
-| 結果/フォーム | `<M-CR>` | 置換プレビューへ |
+| 結果/フォーム | `<C-d>` | 置換プレビューへ |
 | プレビュー | `<Space>` / `<C-a>` / `<C-x>` | 対象トグル / 全選択 / 全解除 |
 | プレビュー | `<CR>` | 適用 |
 | 全体 | `q` / `<Esc>` | 閉じる |

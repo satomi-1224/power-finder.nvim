@@ -54,7 +54,7 @@ M.defaults = {
     open_vsplit = "<C-v>",
     fold = "za", -- toggle a file group in the results (Tab now switches panes)
     to_quickfix = "<C-q>",
-    replace_preview = "<M-CR>",
+    replace_preview = "<C-d>",
     -- Tab / Shift-Tab switch focus between the form and results panes.
   },
 }
