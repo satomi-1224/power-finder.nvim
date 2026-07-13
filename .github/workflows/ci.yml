@@ -23,8 +23,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Pin a modern ripgrep: the replace feature relies on the `replacement`
+      # field in `rg --json` output, which requires ripgrep 15+.
       - name: Install ripgrep
-        run: sudo apt-get update && sudo apt-get install -y ripgrep
+        uses: taiki-e/install-action@v2
+        with:
+          tool: ripgrep@15.1.0
 
       - name: Install Neovim (${{ matrix.neovim }})
         uses: rhysd/action-setup-vim@v1

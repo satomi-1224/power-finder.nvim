@@ -90,6 +90,22 @@ function M.summarize(preview)
   return { files = files, total_files = total_files, changes = changes }
 end
 
+-- True if any submatch carries a replacement (i.e. ripgrep is new enough).
+---@param results pf.Results
+---@return boolean
+function M._has_replacement(results)
+  for _, f in ipairs(results.files or {}) do
+    for _, m in ipairs(f.matches) do
+      for _, sm in ipairs(m.submatches) do
+        if sm.replacement ~= nil then
+          return true
+        end
+      end
+    end
+  end
+  return false
+end
+
 --- Run ripgrep with --replace to compute the preview asynchronously.
 ---@param query pf.Query & { cwd?:string }
 ---@param opts { cwd?:string, max_results?:integer }
@@ -106,7 +122,15 @@ function M.gather_preview(query, opts, cb)
       cb(err, nil)
       return
     end
-    cb(nil, M.build_preview(results))
+    local preview = M.build_preview(results)
+    -- If ripgrep found matches yet emitted no replacement data at all, it is
+    -- almost certainly too old: the `replacement` field in --json output needs
+    -- ripgrep 15+. Surface a clear message instead of a silent "nothing to do".
+    if #preview == 0 and (results.total or 0) > 0 and not M._has_replacement(results) then
+      cb("power-finder: replace preview needs ripgrep 15+ (its --json output lacks replacement data)", nil)
+      return
+    end
+    cb(nil, preview)
   end)
 end
 

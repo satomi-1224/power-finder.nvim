@@ -48,6 +48,13 @@ describe("panel", function()
 
   before_each(function()
     config.setup({})
+    -- Ensure no panel leaked from a previously-failed test (open() reuses the
+    -- current instance if one is still open, which would corrupt this test).
+    if panel_mod._current then
+      pcall(function()
+        panel_mod._current:close()
+      end)
+    end
   end)
 
   it("opens two valid floating windows", function()

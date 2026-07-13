@@ -26,6 +26,9 @@ Zed / IntelliJ の *Find in Files* 級のプロジェクト検索・一括置換
 
 - Neovim **0.10+**（開発・検証は 0.12.3）
 - [ripgrep](https://github.com/BurntSushi/ripgrep)（`rg`）
+  - 検索のみなら任意のバージョンで可
+  - **一括置換のプレビューは ripgrep 15+** が必要（`rg --json` の `replacement`
+    フィールドを利用するため。古い rg では置換時に明示的なエラーで通知します）
 - 任意: [fzf-lua](https://github.com/ibhagwan/fzf-lua)（スコープの任意パス選択 picker に利用）
 - 任意: [fd](https://github.com/sharkdp/fd)（パス picker が高速化。無ければ `find` を使用）
 
