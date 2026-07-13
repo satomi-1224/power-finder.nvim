@@ -1,0 +1,571 @@
+<style>
+  /* ============ Selenized-based token system ============ */
+  /* Light (Selenized light) — default */
+  :root {
+    --bg:        #fbf3db;
+    --surface:   #f2e9cf;
+    --panel:     #ece3cc;
+    --panel-2:   #e0d7bd;
+    --border:    #d3caae;
+    --border-2:  #c4bb9f;
+    --fg:        #3a4d53;
+    --fg-dim:    #53676d;
+    --faint:     #7c8377;
+    --accent:    #0072d4;   /* blue */
+    --accent-bg: rgba(0,114,212,0.14);
+    --add:       #489100;   /* green */
+    --add-bg:    rgba(72,145,0,0.15);
+    --del:       #d2212d;   /* red */
+    --del-bg:    rgba(210,33,45,0.12);
+    --warn:      #ad8900;   /* yellow */
+    --info:      #009c8f;   /* cyan  */
+    --violet:    #8762c6;
+    /* editor mock ground = a touch deeper than the page */
+    --ed-bg:     #f4ecd3;
+    --ed-line:   rgba(0,0,0,0.045);
+    --shadow:    0 18px 50px -12px rgba(58,77,83,0.32);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:        #0c343f;
+      --surface:   #103c48;
+      --panel:     #123f4c;
+      --panel-2:   #184956;
+      --border:    #204c5a;
+      --border-2:  #2d5b69;
+      --fg:        #adbcbc;
+      --fg-dim:    #92a4a5;
+      --faint:     #72898f;
+      --accent:    #4695f7;
+      --accent-bg: rgba(70,149,247,0.18);
+      --add:       #75b938;
+      --add-bg:    rgba(117,185,56,0.16);
+      --del:       #fa5750;
+      --del-bg:    rgba(250,87,80,0.15);
+      --warn:      #dbb32d;
+      --info:      #41c7b9;
+      --violet:    #af88eb;
+      --ed-bg:     #103c48;
+      --ed-line:   rgba(255,255,255,0.035);
+      --shadow:    0 22px 60px -12px rgba(0,0,0,0.6);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg:#fbf3db; --surface:#f2e9cf; --panel:#ece3cc; --panel-2:#e0d7bd;
+    --border:#d3caae; --border-2:#c4bb9f; --fg:#3a4d53; --fg-dim:#53676d; --faint:#7c8377;
+    --accent:#0072d4; --accent-bg:rgba(0,114,212,0.14);
+    --add:#489100; --add-bg:rgba(72,145,0,0.15); --del:#d2212d; --del-bg:rgba(210,33,45,0.12);
+    --warn:#ad8900; --info:#009c8f; --violet:#8762c6;
+    --ed-bg:#f4ecd3; --ed-line:rgba(0,0,0,0.045); --shadow:0 18px 50px -12px rgba(58,77,83,0.32);
+  }
+  :root[data-theme="dark"] {
+    --bg:#0c343f; --surface:#103c48; --panel:#123f4c; --panel-2:#184956;
+    --border:#204c5a; --border-2:#2d5b69; --fg:#adbcbc; --fg-dim:#92a4a5; --faint:#72898f;
+    --accent:#4695f7; --accent-bg:rgba(70,149,247,0.18);
+    --add:#75b938; --add-bg:rgba(117,185,56,0.16); --del:#fa5750; --del-bg:rgba(250,87,80,0.15);
+    --warn:#dbb32d; --info:#41c7b9; --violet:#af88eb;
+    --ed-bg:#103c48; --ed-line:rgba(255,255,255,0.035); --shadow:0 22px 60px -12px rgba(0,0,0,0.6);
+  }
+
+  --mono: ; /* placeholder to avoid accidental cascade */
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, var(--accent-bg), transparent 60%),
+      var(--bg);
+    color: var(--fg);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono {
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---------- header ---------- */
+  header {
+    padding: 64px 0 40px;
+  }
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 14px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .eyebrow::before {
+    content: ""; width: 26px; height: 2px; background: var(--accent); border-radius: 2px;
+  }
+  h1 {
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: clamp(34px, 6vw, 56px); font-weight: 650; letter-spacing: -0.02em;
+    margin: 0 0 8px; color: var(--fg); text-wrap: balance;
+  }
+  h1 .cursor {
+    display: inline-block; width: 0.55em; height: 0.92em; background: var(--accent);
+    transform: translateY(0.12em); margin-left: 4px; border-radius: 1px;
+    animation: blink 1.15s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { h1 .cursor { animation: none; } }
+  .lede { font-size: 18.5px; color: var(--fg-dim); max-width: 62ch; margin: 14px 0 0; }
+  .decision-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 26px; }
+  .chip {
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px; padding: 5px 11px; border-radius: 999px;
+    border: 1px solid var(--border-2); color: var(--fg-dim); background: var(--surface);
+  }
+  .chip b { color: var(--accent); font-weight: 600; }
+
+  /* ---------- section scaffold ---------- */
+  section { padding: 30px 0; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin: 0 0 20px; }
+  .sec-num {
+    font-family: ui-monospace, monospace; font-size: 13px; color: var(--accent);
+    letter-spacing: 0.1em;
+  }
+  h2 { font-size: 24px; font-weight: 640; letter-spacing: -0.01em; margin: 0; color: var(--fg); }
+  .sec-sub { color: var(--fg-dim); font-size: 15.5px; max-width: 66ch; margin: -8px 0 22px; }
+
+  /* ================= EDITOR MOCK ================= */
+  .editor {
+    border-radius: 12px; overflow: hidden; border: 1px solid var(--border-2);
+    background: var(--ed-bg); box-shadow: var(--shadow);
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13.5px;
+  }
+  .titlebar {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+    background: var(--panel); border-bottom: 1px solid var(--border);
+  }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .dot.r { background: var(--del); } .dot.y { background: var(--warn); } .dot.g { background: var(--add); }
+  .titlebar .path { margin-left: 10px; color: var(--faint); font-size: 12.5px; }
+  .titlebar .ft { margin-left: auto; color: var(--faint); font-size: 12px; }
+
+  /* the floating search panel that sits "inside" the editor */
+  .editor-body { position: relative; padding: 22px; background:
+      repeating-linear-gradient(var(--ed-bg), var(--ed-bg) 21px, var(--ed-line) 21px, var(--ed-line) 22px);
+    min-height: 300px; }
+  .ghost { color: var(--faint); opacity: 0.55; white-space: pre; user-select: none; }
+
+  .panel {
+    border: 1px solid var(--border-2); border-radius: 10px; overflow: hidden;
+    background: var(--surface); box-shadow: var(--shadow);
+  }
+  .panel-tabs { display: flex; background: var(--panel); border-bottom: 1px solid var(--border); }
+  .tab {
+    appearance: none; border: 0; background: transparent; cursor: pointer;
+    font: inherit; font-size: 12.5px; padding: 10px 16px; color: var(--fg-dim);
+    border-bottom: 2px solid transparent; letter-spacing: 0.02em;
+  }
+  .tab[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); background: var(--surface); }
+  .tab .kbd { color: var(--faint); font-size: 11px; margin-left: 8px; }
+  .panel-title { margin-left: auto; align-self: center; padding-right: 14px; color: var(--faint); font-size: 11.5px; }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* form */
+  .form { padding: 12px 14px 4px; display: grid; gap: 7px; }
+  .field { display: grid; grid-template-columns: 82px 1fr auto; align-items: center; gap: 10px; }
+  .field label { color: var(--faint); font-size: 12px; text-transform: lowercase; letter-spacing: 0.03em; }
+  .input {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; color: var(--fg); min-height: 30px; display: flex; align-items: center;
+  }
+  .input.query b { color: var(--accent); font-weight: 600; }
+  .input .caret { display:inline-block; width:1px; height:15px; background: var(--accent); margin-left:1px; animation: blink 1.15s steps(1) infinite; }
+  @media (prefers-reduced-motion: reduce){ .input .caret{ animation:none; } }
+  .input.muted { color: var(--faint); }
+  .toggles { display: flex; gap: 6px; }
+  .tg {
+    appearance: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600;
+    width: 30px; height: 30px; border-radius: 6px; border: 1px solid var(--border-2);
+    background: var(--bg); color: var(--faint); display: grid; place-items: center;
+    transition: background .12s, color .12s, border-color .12s;
+  }
+  .tg:hover { border-color: var(--accent); }
+  .tg[aria-pressed="true"] { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+  .tg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .scope { display: flex; gap: 14px; flex-wrap: wrap; }
+  .scope .opt { color: var(--faint); cursor: pointer; }
+  .scope .opt.on { color: var(--fg); }
+  .scope .opt .rad { color: var(--accent); }
+
+  .statusline {
+    display: flex; align-items: center; gap: 14px; padding: 8px 14px;
+    background: var(--panel); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    color: var(--fg-dim); font-size: 12px;
+  }
+  .statusline .n { color: var(--fg); font-weight: 600; }
+  .statusline .t { margin-left: auto; color: var(--info); }
+
+  /* results */
+  .results { padding: 6px 0 8px; max-height: 320px; overflow-y: auto; }
+  .filerow {
+    display: flex; align-items: center; gap: 8px; padding: 5px 14px; cursor: pointer;
+    color: var(--fg); user-select: none;
+  }
+  .filerow:hover { background: var(--accent-bg); }
+  .filerow .disc { color: var(--accent); width: 12px; }
+  .filerow .fname { color: var(--fg); }
+  .filerow .cnt { color: var(--faint); font-size: 11.5px; }
+  .matchline {
+    display: grid; grid-template-columns: 46px 1fr; gap: 12px; padding: 2px 14px 2px 0;
+    color: var(--fg-dim); white-space: pre; overflow: hidden;
+  }
+  .matchline .ln { text-align: right; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .matchline mark { background: var(--accent-bg); color: var(--accent); border-radius: 3px; padding: 0 1px; }
+  .collapsed .matchline { display: none; }
+
+  /* replace preview */
+  .rpv { padding: 6px 0 10px; max-height: 340px; overflow-y: auto; }
+  .rp-head { padding: 8px 14px 12px; color: var(--fg-dim); font-size: 12.5px; }
+  .rp-head .from { color: var(--del); } .rp-head .to { color: var(--add); }
+  .rp-file { display: flex; align-items: center; gap: 8px; padding: 6px 14px; cursor: pointer; user-select: none; }
+  .rp-file:hover { background: var(--accent-bg); }
+  .cb { width: 15px; height: 15px; border: 1px solid var(--border-2); border-radius: 3px; display: grid; place-items: center; color: var(--add); font-size: 11px; }
+  .rp-file[data-on="0"] { color: var(--faint); }
+  .rp-file[data-on="0"] .cb { color: transparent; }
+  .rp-file[data-on="0"] + .rp-hunks { opacity: 0.4; }
+  .diffline { display: grid; grid-template-columns: 46px 14px 1fr; gap: 6px; padding: 1px 14px 1px 0; white-space: pre; }
+  .diffline .ln { text-align: right; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .diffline.del { background: var(--del-bg); } .diffline.del .sg { color: var(--del); }
+  .diffline.add { background: var(--add-bg); } .diffline.add .sg { color: var(--add); }
+  .diffline .code { color: var(--fg); }
+
+  .keybar {
+    display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 9px 14px;
+    background: var(--panel); border-top: 1px solid var(--border); color: var(--faint); font-size: 11.5px;
+  }
+  .keybar b { color: var(--fg-dim); font-weight: 600; }
+  kbd {
+    font-family: inherit; background: var(--bg); border: 1px solid var(--border-2);
+    border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; color: var(--fg-dim); font-size: 11px;
+  }
+  .hint {
+    margin-top: 12px; color: var(--faint); font-size: 13px; text-align: center;
+  }
+  .hint b { color: var(--accent); }
+
+  /* ---------- flow ---------- */
+  .flow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .step { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 14px; position: relative; }
+  .step .k { font-family: ui-monospace, monospace; font-size: 12px; color: var(--accent); letter-spacing: 0.08em; }
+  .step h4 { margin: 8px 0 6px; font-size: 15px; color: var(--fg); }
+  .step p { margin: 0; font-size: 13px; color: var(--fg-dim); }
+  .step .arr { position: absolute; right: -12px; top: 50%; transform: translateY(-50%); color: var(--border-2); z-index: 1; }
+  @media (max-width: 860px){ .flow { grid-template-columns: 1fr 1fr; } .step .arr{ display:none; } }
+
+  /* ---------- features ---------- */
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 18px 16px; }
+  .card .ic { font-family: ui-monospace, monospace; font-weight: 700; color: var(--accent); font-size: 15px; }
+  .card h4 { margin: 10px 0 6px; font-size: 15.5px; color: var(--fg); }
+  .card p { margin: 0; font-size: 13.5px; color: var(--fg-dim); }
+  .card code { font-family: ui-monospace, monospace; font-size: 12.5px; background: var(--panel); padding: 1px 5px; border-radius: 4px; color: var(--info); }
+  @media (max-width: 720px){ .grid { grid-template-columns: 1fr; } }
+
+  /* ---------- keymap table ---------- */
+  .tblwrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--border); }
+  thead th { background: var(--panel); color: var(--faint); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.ctx { color: var(--faint); }
+  td .desc { color: var(--fg-dim); }
+
+  /* ---------- architecture ---------- */
+  .arch { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
+  .opt-card { border: 1px solid var(--border); border-radius: 10px; padding: 16px; background: var(--surface); }
+  .opt-card.rec { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .opt-card .tag { font-family: ui-monospace, monospace; font-size: 11px; color: var(--faint); letter-spacing: 0.06em; }
+  .opt-card.rec .tag { color: var(--accent); }
+  .opt-card h4 { margin: 6px 0 8px; font-size: 15px; color: var(--fg); }
+  .opt-card p { margin: 0; font-size: 13px; color: var(--fg-dim); }
+  .opt-card .verdict { margin-top: 10px; font-size: 12px; color: var(--faint); }
+  @media (max-width: 820px){ .arch { grid-template-columns: 1fr; } }
+
+  footer { padding: 40px 0 70px; color: var(--faint); font-size: 13px; border-top: 1px solid var(--border); margin-top: 30px; }
+  footer .mono { color: var(--fg-dim); }
+
+  .note { background: var(--accent-bg); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; padding: 12px 16px; font-size: 13.5px; color: var(--fg-dim); margin-top: 18px; }
+  .note b { color: var(--fg); }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Neovim plugin · design preview</p>
+    <h1 class="mono">search-ui.nvim<span class="cursor"></span></h1>
+    <p class="lede">Zed / IntelliJ の “Find in Files” 級のプロジェクト検索・一括置換を、
+      Neovim ネイティブの一体型パネルで。構造化フォームで条件を組み、ライブで結果を見て、
+      diff を確認してから安全に置換する。</p>
+    <div class="decision-row">
+      <span class="chip"><b>土台</b> 自作パネル + fzf-lua 補助</span>
+      <span class="chip"><b>実行</b> ライブ (ripgrep --json)</span>
+      <span class="chip"><b>置換</b> diff プレビュー → 一括適用</span>
+      <span class="chip"><b>配色</b> Selenized 準拠</span>
+    </div>
+  </header>
+
+  <!-- ============ LIVE MOCK ============ -->
+  <section>
+    <div class="sec-head"><span class="sec-num mono">01</span><h2>操作イメージ（触れます）</h2></div>
+    <p class="sec-sub">実際の見え方のモックです。トグル（<span class="mono">.* / Aa / W</span>）を押す、ファイル見出しで折りたたむ、
+      上のタブで <b>検索</b> と <b>置換プレビュー</b> を切り替える、が動きます。</p>
+
+    <div class="editor">
+      <div class="titlebar">
+        <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+        <span class="path mono">~/work/app — NVIM</span>
+        <span class="ft mono">typescript</span>
+      </div>
+      <div class="editor-body">
+        <div class="ghost">  1  import { retry } from "./util"
+  2
+  3  export function handleRequest(req: Request) {
+  4    return handleRequest(retry(req))
+  5  }</div>
+
+        <div class="panel" style="margin-top:16px;">
+          <div class="panel-tabs" role="tablist">
+            <button class="tab" role="tab" aria-selected="true" data-view="search">Search<span class="kbd mono">live</span></button>
+            <button class="tab" role="tab" aria-selected="false" data-view="replace">Replace Preview<span class="kbd mono">M-CR</span></button>
+            <span class="panel-title mono">search-ui</span>
+          </div>
+
+          <!-- SEARCH VIEW -->
+          <div class="view active mono" data-view="search">
+            <div class="form">
+              <div class="field">
+                <label>search</label>
+                <div class="input query"><b>handleRequest</b><span class="caret"></span></div>
+                <div class="toggles">
+                  <button class="tg" data-tg="regex" aria-pressed="true"  title="正規表現モード（rust regex）">.*</button>
+                  <button class="tg" data-tg="case"  aria-pressed="false" title="大文字小文字を区別（既定は smart-case）">Aa</button>
+                  <button class="tg" data-tg="word"  aria-pressed="false" title="単語単位でマッチ（-w）">W</button>
+                </div>
+              </div>
+              <div class="field">
+                <label>replace</label>
+                <div class="input muted">（空 — 入れると置換プレビューが有効に）</div>
+                <div></div>
+              </div>
+              <div class="field">
+                <label>include</label>
+                <div class="input">*.ts, *.tsx</div><div></div>
+              </div>
+              <div class="field">
+                <label>exclude</label>
+                <div class="input">**/node_modules/**, **/dist/**</div><div></div>
+              </div>
+              <div class="field">
+                <label>scope</label>
+                <div class="input scope">
+                  <span class="opt on"><span class="rad">●</span> Project</span>
+                  <span class="opt"><span class="rad">○</span> Cwd</span>
+                  <span class="opt"><span class="rad">○</span> Buffers</span>
+                  <span class="opt"><span class="rad">○</span> Path…</span>
+                </div>
+                <div></div>
+              </div>
+            </div>
+            <div class="statusline">
+              <span><span class="n">128</span> matches</span>
+              <span><span class="n">23</span> files</span>
+              <span class="t">rg 0.04s</span>
+            </div>
+            <div class="results">
+              <div class="filegroup">
+                <div class="filerow"><span class="disc">▼</span><span class="fname">src/api/client.ts</span><span class="cnt">(4)</span></div>
+                <div class="matchline"><span class="ln">18</span><span class="code">export function <mark>handleRequest</mark>(req) {</span></div>
+                <div class="matchline"><span class="ln">45</span><span class="code">  return <mark>handleRequest</mark>(retry(req))</span></div>
+              </div>
+              <div class="filegroup collapsed">
+                <div class="filerow"><span class="disc">▶</span><span class="fname">src/api/server.ts</span><span class="cnt">(2)</span></div>
+                <div class="matchline"><span class="ln">30</span><span class="code">  <mark>handleRequest</mark>()</span></div>
+                <div class="matchline"><span class="ln">31</span><span class="code">  log(<mark>handleRequest</mark>)</span></div>
+              </div>
+              <div class="filegroup">
+                <div class="filerow"><span class="disc">▼</span><span class="fname">src/handlers.ts</span><span class="cnt">(1)</span></div>
+                <div class="matchline"><span class="ln">102</span><span class="code">const h = <mark>handleRequest</mark></span></div>
+              </div>
+            </div>
+            <div class="keybar">
+              <span><b>CR</b> open</span><span><b>Tab</b> fold</span>
+              <span><kbd>C-r</kbd> regex</span><span><kbd>C-c</kbd> case</span><span><kbd>C-w</kbd> word</span>
+              <span><kbd>C-s</kbd> scope</span><span><kbd>C-q</kbd> →quickfix</span><span><kbd>M-CR</kbd> replace</span>
+            </div>
+          </div>
+
+          <!-- REPLACE VIEW -->
+          <div class="view mono" data-view="replace">
+            <div class="rp-head">
+              置換: <span class="from">handleRequest</span> → <span class="to">dispatchRequest</span>
+              &nbsp;·&nbsp; <span style="color:var(--faint)">チェックしたファイルだけ適用します</span>
+            </div>
+            <div class="rp-block">
+              <div class="rp-file" data-on="1"><span class="cb">✓</span><span>src/api/client.ts</span><span class="cnt">(2 changes)</span></div>
+              <div class="rp-hunks">
+                <div class="diffline del"><span class="ln">18</span><span class="sg">-</span><span class="code">export function handleRequest(req) {</span></div>
+                <div class="diffline add"><span class="ln"></span><span class="sg">+</span><span class="code">export function dispatchRequest(req) {</span></div>
+                <div class="diffline del"><span class="ln">45</span><span class="sg">-</span><span class="code">  return handleRequest(retry(req))</span></div>
+                <div class="diffline add"><span class="ln"></span><span class="sg">+</span><span class="code">  return dispatchRequest(retry(req))</span></div>
+              </div>
+            </div>
+            <div class="rp-block">
+              <div class="rp-file" data-on="0"><span class="cb">✓</span><span>src/api/server.ts</span><span class="cnt">(1 change) — 除外中</span></div>
+              <div class="rp-hunks">
+                <div class="diffline del"><span class="ln">30</span><span class="sg">-</span><span class="code">  handleRequest()</span></div>
+                <div class="diffline add"><span class="ln"></span><span class="sg">+</span><span class="code">  dispatchRequest()</span></div>
+              </div>
+            </div>
+            <div class="statusline">
+              <span>適用対象 <span class="n">1</span> / 2 files</span>
+              <span><span class="n">2</span> occurrences</span>
+              <span class="t">1 undo block</span>
+            </div>
+            <div class="keybar">
+              <span><b>Space</b> ファイル切替</span><span><kbd>C-a</kbd> 全選択</span><span><kbd>C-x</kbd> 全解除</span>
+              <span><b>CR</b> apply</span><span><b>q</b> cancel</span>
+            </div>
+          </div>
+        </div>
+
+        <p class="hint">↑ タブで <b>Search ⇄ Replace Preview</b> を切替・トグルとファイル行はクリックできます</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FLOW ============ -->
+  <section>
+    <div class="sec-head"><span class="sec-num mono">02</span><h2>操作フロー</h2></div>
+    <p class="sec-sub">起動から置換適用まで。検索はキー入力のたびにライブ更新され、置換は必ず diff を挟んでから適用します。</p>
+    <div class="flow">
+      <div class="step"><span class="k">1</span><h4>開く</h4><p><span class="mono">&lt;leader&gt;sf</span> でパネル起動。前回の条件を引き継がず素の状態から。</p><span class="arr">→</span></div>
+      <div class="step"><span class="k">2</span><h4>条件を組む</h4><p>Search / Include / Exclude を入力し、regex・case・word をトグル。Scope を選ぶ。</p><span class="arr">→</span></div>
+      <div class="step"><span class="k">3</span><h4>ライブで見る</h4><p>入力停止 120ms で ripgrep 実行。ファイル単位でグルーピングされ即描画。</p><span class="arr">→</span></div>
+      <div class="step"><span class="k">4</span><h4>絞る / 飛ぶ</h4><p><span class="mono">CR</span> で該当箇所へジャンプ、<span class="mono">Tab</span> で折りたたみ、<span class="mono">C-q</span> で quickfix へ。</p><span class="arr">→</span></div>
+      <div class="step"><span class="k">5</span><h4>置換する</h4><p>Replace を入れ <span class="mono">M-CR</span>。diff を確認しファイルを選び <span class="mono">CR</span> で一括適用。</p></div>
+    </div>
+  </section>
+
+  <!-- ============ FEATURES ============ -->
+  <section>
+    <div class="sec-head"><span class="sec-num mono">03</span><h2>機能</h2></div>
+    <div class="grid">
+      <div class="card"><span class="ic mono">.*</span><h4>正規表現 / リテラル切替</h4><p>rust regex ベースの正規表現と固定文字列（<code>-F</code>）をワンキーで切替。キャプチャ参照 <code>$1</code> は置換で利用可。</p></div>
+      <div class="card"><span class="ic mono">Aa W</span><h4>case / word</h4><p>大文字小文字の区別と単語単位マッチ。未指定時は <code>smart-case</code>。すべてトグルで即反映。</p></div>
+      <div class="card"><span class="ic mono">{}</span><h4>Include / Exclude glob</h4><p>対象と除外を glob で指定（<code>-g</code> / <code>-g '!…'</code>）。カンマ区切りで複数、fzf-lua でパス候補も選べる。</p></div>
+      <div class="card"><span class="ic mono">◎</span><h4>検索スコープ</h4><p>Project（git ルート）/ Cwd / 開いているバッファ / 任意パスを切替。任意パスは fzf-lua の picker で。</p></div>
+      <div class="card"><span class="ic mono">≈</span><h4>ライブ検索</h4><p>入力のたびにデバウンス付きで ripgrep を再実行。進行中の検索はキャンセルし、件数上限で暴走を防止。</p></div>
+      <div class="card"><span class="ic mono">±</span><h4>diff プレビュー置換</h4><p>実ファイルを触らず置換後を算出し diff 表示。ファイル単位でチェックし、1 undo ブロックで安全に適用。</p></div>
+      <div class="card"><span class="ic mono">⚑</span><h4>quickfix 連携</h4><p>結果を <code>C-q</code> で quickfix へ。既存の <code>:cdo</code> や他プラグインのワークフローにそのまま橋渡し。</p></div>
+      <div class="card"><span class="ic mono">☾</span><h4>Selenized 準拠テーマ</h4><p>あなたの <code>selenized.nvim</code> に馴染む配色。light / dark 両対応で環境から浮かない。</p></div>
+    </div>
+  </section>
+
+  <!-- ============ KEYMAPS ============ -->
+  <section>
+    <div class="sec-head"><span class="sec-num mono">04</span><h2>キーマップ（既定案）</h2></div>
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>コンテキスト</th><th>キー</th><th>動作</th></tr></thead>
+        <tbody>
+          <tr><td class="ctx">global</td><td class="mono">&lt;leader&gt;sf</td><td class="desc">パネルを開く（:SearchUI）</td></tr>
+          <tr><td class="ctx">form</td><td class="mono">C-r / C-c / C-w</td><td class="desc">regex / case / word トグル</td></tr>
+          <tr><td class="ctx">form</td><td class="mono">C-s</td><td class="desc">スコープ picker（fzf-lua）</td></tr>
+          <tr><td class="ctx">form</td><td class="mono">Tab / S-Tab</td><td class="desc">次 / 前の入力欄へ</td></tr>
+          <tr><td class="ctx">results</td><td class="mono">CR</td><td class="desc">該当箇所を開く</td></tr>
+          <tr><td class="ctx">results</td><td class="mono">Tab</td><td class="desc">ファイル折りたたみトグル</td></tr>
+          <tr><td class="ctx">results</td><td class="mono">C-q</td><td class="desc">結果を quickfix へ送る</td></tr>
+          <tr><td class="ctx">any</td><td class="mono">M-CR</td><td class="desc">置換プレビューへ</td></tr>
+          <tr><td class="ctx">preview</td><td class="mono">Space / C-a / C-x</td><td class="desc">対象トグル / 全選択 / 全解除</td></tr>
+          <tr><td class="ctx">preview</td><td class="mono">CR</td><td class="desc">チェック済みを一括適用</td></tr>
+          <tr><td class="ctx">any</td><td class="mono">q / Esc</td><td class="desc">閉じる</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ ARCHITECTURE ============ -->
+  <section>
+    <div class="sec-head"><span class="sec-num mono">05</span><h2>実装アプローチ（要判断）</h2></div>
+    <p class="sec-sub">「fzf-lua 土台」と「一体型パネル + diff 置換」は技術的に一部両立しません。fzf は単一プロンプトの選択 UI で、複数入力欄フォームや行単位 diff の描画面には使えないためです。落とし所を選んでください。</p>
+    <div class="arch">
+      <div class="opt-card rec">
+        <span class="tag mono">OPTION A · 推奨</span>
+        <h4>自作パネル + fzf 補助</h4>
+        <p>検索・結果・置換パネルは自作、fzf-lua はスコープ / glob のパス選択 picker として統合。上のモックがこれ。</p>
+        <p class="verdict">望む UI を全て満たす · 実装量 中〜大</p>
+      </div>
+      <div class="opt-card">
+        <span class="tag mono">OPTION B</span>
+        <h4>fzf-lua 全面依存</h4>
+        <p>検索は fzf-lua の live_grep、置換は quickfix → cdo。一体型パネルと diff プレビューは断念。</p>
+        <p class="verdict">実装 最小 · 今回の希望とは不一致</p>
+      </div>
+      <div class="opt-card">
+        <span class="tag mono">OPTION C</span>
+        <h4>grug-far.nvim 採用</h4>
+        <p>望む UI にほぼ一致する既存プラグインを導入し設定で対応。実装ほぼゼロ。</p>
+        <p class="verdict">作らない選択肢 ·「自作したい」意図とは別方向</p>
+      </div>
+    </div>
+    <div class="note">
+      <b>この preview は OPTION A を前提</b>に描いています。方向性が確定したら、M0 スケルトン生成 → M1（ライブ検索）から実装に着手します。詳細な設計は <span class="mono">DESIGN.md</span> にあります。
+    </div>
+  </section>
+
+  <footer>
+    <div class="mono">search-ui.nvim</div>
+    Neovim 0.12 · ripgrep · lazy.nvim / home-manager · 配色は Selenized 準拠 — 右上のトグルで light / dark を確認できます。
+  </footer>
+</div>
+
+<script>
+  // tab switching
+  document.querySelectorAll('.tab').forEach(function (t) {
+    t.addEventListener('click', function () {
+      var target = t.getAttribute('data-view');
+      document.querySelectorAll('.tab').forEach(function (x) {
+        x.setAttribute('aria-selected', x === t ? 'true' : 'false');
+      });
+      document.querySelectorAll('.view').forEach(function (v) {
+        v.classList.toggle('active', v.getAttribute('data-view') === target);
+      });
+    });
+  });
+
+  // toggles
+  document.querySelectorAll('.tg').forEach(function (b) {
+    b.addEventListener('click', function () {
+      b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    });
+  });
+
+  // fold / unfold file groups (results view)
+  document.querySelectorAll('.results .filerow').forEach(function (r) {
+    r.addEventListener('click', function () {
+      var g = r.parentElement;
+      var collapsed = g.classList.toggle('collapsed');
+      r.querySelector('.disc').textContent = collapsed ? '▶' : '▼';
+    });
+  });
+
+  // toggle replace-target files
+  document.querySelectorAll('.rp-file').forEach(function (f) {
+    f.addEventListener('click', function () {
+      f.setAttribute('data-on', f.getAttribute('data-on') === '1' ? '0' : '1');
+      var cnt = f.querySelector('.cnt');
+      var on = f.getAttribute('data-on') === '1';
+      cnt.textContent = cnt.textContent.replace(/ — 除外中$/, '') + (on ? '' : ' — 除外中');
+    });
+  });
+</script>

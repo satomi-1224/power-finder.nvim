@@ -1,0 +1,151 @@
+-- Headless smoke tests for the panel: they open real (hidden) floating windows
+-- and drive the same methods the key mappings call, so the UI wiring is
+-- exercised even without a human at a terminal.
+
+local config = require("power-finder.config")
+local panel_mod = require("power-finder.panel")
+
+local has_rg = vim.fn.executable("rg") == 1
+
+local function make_tree(files)
+  local dir = vim.fn.tempname()
+  vim.fn.mkdir(dir, "p")
+  for rel, content in pairs(files) do
+    local abs = dir .. "/" .. rel
+    vim.fn.mkdir(vim.fn.fnamemodify(abs, ":h"), "p")
+    local fd = assert(io.open(abs, "w"))
+    fd:write(content)
+    fd:close()
+  end
+  return dir
+end
+
+local function read(path)
+  local fd = assert(io.open(path, "r"))
+  local c = fd:read("*a")
+  fd:close()
+  return c
+end
+
+local function wait_until(pred, timeout)
+  return vim.wait(timeout or 4000, pred, 20)
+end
+
+local function contains(lines, needle)
+  for _, l in ipairs(lines) do
+    if l:find(needle, 1, true) then
+      return true
+    end
+  end
+  return false
+end
+
+describe("panel", function()
+  if not has_rg then
+    pending("ripgrep not available")
+    return
+  end
+
+  before_each(function()
+    config.setup({})
+  end)
+
+  it("opens two valid floating windows", function()
+    local dir = make_tree({ ["a.ts"] = "x\n" })
+    local p = panel_mod.open({ cwd = dir, scope = "path", scope_paths = { dir } })
+    assert.is_true(vim.api.nvim_win_is_valid(p.form_win))
+    assert.is_true(vim.api.nvim_win_is_valid(p.res_win))
+    assert.is_false(vim.bo[p.res_buf].modifiable) -- results are read-only
+    p:close()
+    assert.is_false(p:is_open())
+  end)
+
+  it("renders grouped results for a query", function()
+    local dir = make_tree({
+      ["a.ts"] = "export function handleRequest() {}\n",
+      ["b.ts"] = "handleRequest()\n",
+    })
+    local p = panel_mod.open({ cwd = dir, scope = "path", scope_paths = { dir } })
+    p:_set_values({ search = "handleRequest" })
+    local done = false
+    p:_search_now(function()
+      done = true
+    end)
+    assert.is_true(wait_until(function()
+      return done
+    end))
+    local lines = p:_results_lines()
+    assert.is_true(contains(lines, "2 matches"))
+    assert.is_true(contains(lines, "a.ts"))
+    assert.is_true(contains(lines, "handleRequest"))
+    p:close()
+  end)
+
+  it("folds a file group, hiding its matches", function()
+    local dir = make_tree({ ["a.ts"] = "handleRequest\nhandleRequest\n" })
+    local p = panel_mod.open({ cwd = dir, scope = "path", scope_paths = { dir } })
+    p:_set_values({ search = "handleRequest" })
+    local done = false
+    p:_search_now(function()
+      done = true
+    end)
+    wait_until(function()
+      return done
+    end)
+    local before = #p:_results_lines()
+    p.results.files[1].collapsed = true
+    p:render_results()
+    local after = #p:_results_lines()
+    assert.is_true(after < before)
+    p:close()
+  end)
+
+  it("cycles the case toggle through smart/sensitive/ignore", function()
+    local dir = make_tree({ ["a.ts"] = "x\n" })
+    local p = panel_mod.open({ cwd = dir, scope = "path", scope_paths = { dir } })
+    assert.equals("smart", p.toggles.case)
+    p:toggle("case")
+    assert.equals("sensitive", p.toggles.case)
+    p:toggle("case")
+    assert.equals("ignore", p.toggles.case)
+    p:toggle("case")
+    assert.equals("smart", p.toggles.case)
+    p:close()
+  end)
+
+  it("enters replace preview and applies the change", function()
+    local dir = make_tree({ ["a.ts"] = "handleRequest()\n" })
+    local p = panel_mod.open({ cwd = dir, scope = "path", scope_paths = { dir } })
+    p:_set_values({ search = "handleRequest", replace = "dispatchRequest" })
+    p:enter_preview()
+    assert.is_true(wait_until(function()
+      return p.mode == "preview"
+    end))
+    local lines = p:_results_lines()
+    assert.is_true(contains(lines, "Replace:"))
+    assert.is_true(contains(lines, "-handleRequest()"))
+    assert.is_true(contains(lines, "+dispatchRequest()"))
+
+    p:apply()
+    assert.equals("dispatchRequest()\n", read(dir .. "/a.ts"))
+    assert.equals("search", p.mode) -- returned to search view
+    p:close()
+  end)
+
+  it("populates the quickfix list", function()
+    local dir = make_tree({ ["a.ts"] = "handleRequest\nhandleRequest\n" })
+    local p = panel_mod.open({ cwd = dir, scope = "path", scope_paths = { dir } })
+    p:_set_values({ search = "handleRequest" })
+    local done = false
+    p:_search_now(function()
+      done = true
+    end)
+    wait_until(function()
+      return done
+    end)
+    p:to_quickfix()
+    local qf = vim.fn.getqflist()
+    assert.equals(2, #qf)
+    pcall(vim.cmd, "cclose")
+  end)
+end)
