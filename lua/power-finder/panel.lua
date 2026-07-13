@@ -527,18 +527,18 @@ function Panel:footer_chunks()
     }
   else
     items = {
+      { "Tab", "pane" },
       { disp(m.fold), "fold" },
       { disp(m.toggle_regex), "regex" },
       { disp(m.toggle_case), "case" },
       { disp(m.toggle_word), "word" },
       { disp(m.scope_picker), "scope" },
       { disp(m.replace_preview), "replace" },
-      { disp(m.to_quickfix), "qf" },
       { "Esc", "close" },
     }
   end
 
-  local avail = (self.res_width or 80) - 6 -- corners + a little breathing room
+  local avail = (self.res_width or 80) - 4 -- corner chars + a dash each side
 
   local function build(list, with_desc)
     local chunks, width = {}, 0
@@ -886,12 +886,14 @@ function Panel:setup_mappings()
   self:map({ self.form_buf }, { "i", "n" }, "<CR>", function()
     self_:goto_results()
   end)
-  -- Tab / Shift-Tab move between fields (never insert a literal tab).
-  self:map({ self.form_buf }, { "i", "n" }, m.next_field, function()
-    self_:move_field(1)
+  -- Tab / Shift-Tab switch focus between the form (top) and results (bottom).
+  -- Field and match selection is done with the arrow keys / j-k, so Tab is
+  -- free to hop panes (never inserts a literal tab in the form).
+  self:map(both, { "n", "i" }, "<Tab>", function()
+    self_:toggle_pane()
   end)
-  self:map({ self.form_buf }, { "i", "n" }, m.prev_field, function()
-    self_:move_field(-1)
+  self:map(both, { "n", "i" }, "<S-Tab>", function()
+    self_:toggle_pane()
   end)
   -- Block normal-mode line-structure edits in the form.
   for _, lhs in ipairs({ "o", "O", "J", "dd" }) do
@@ -951,6 +953,22 @@ function Panel:goto_results()
   if self.res_win and vim.api.nvim_win_is_valid(self.res_win) then
     vim.cmd("stopinsert")
     vim.api.nvim_set_current_win(self.res_win)
+  end
+end
+
+-- Toggle focus between the form (top, insert-ready) and the results (bottom).
+function Panel:toggle_pane()
+  if not self:is_open() then
+    return
+  end
+  local in_results = self.res_win
+    and vim.api.nvim_win_is_valid(self.res_win)
+    and vim.api.nvim_get_current_win() == self.res_win
+  if in_results then
+    self:focus()
+    vim.cmd("startinsert!")
+  else
+    self:goto_results()
   end
 end
 
