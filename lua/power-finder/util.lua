@@ -13,7 +13,9 @@ end
 
 --- Split a comma-separated field (e.g. an include/exclude glob field) into a
 --- list of trimmed, non-empty entries. Commas separate; spaces are preserved
---- inside an entry because globs may legitimately contain them.
+--- inside an entry because globs may legitimately contain them. Commas inside
+--- `{...}` alternation groups are NOT separators, so a brace glob such as
+--- `**/{a,b,c}/**` is kept as a single entry (ripgrep expands the braces).
 ---@param s string?
 ---@return string[]
 function M.split_csv(s)
@@ -21,12 +23,30 @@ function M.split_csv(s)
   if s == nil then
     return out
   end
-  for part in tostring(s):gmatch("[^,]+") do
-    local trimmed = M.trim(part)
+  s = tostring(s)
+  local buf, depth = {}, 0
+  local function flush()
+    local trimmed = M.trim(table.concat(buf))
     if trimmed ~= "" then
       out[#out + 1] = trimmed
     end
+    buf = {}
   end
+  for i = 1, #s do
+    local c = s:sub(i, i)
+    if c == "{" then
+      depth = depth + 1
+      buf[#buf + 1] = c
+    elseif c == "}" then
+      depth = math.max(0, depth - 1)
+      buf[#buf + 1] = c
+    elseif c == "," and depth == 0 then
+      flush()
+    else
+      buf[#buf + 1] = c
+    end
+  end
+  flush()
   return out
 end
 
