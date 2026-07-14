@@ -412,6 +412,37 @@ end
 -- results rendering
 ------------------------------------------------------------------------------
 
+local LEFT_CONTEXT = 10 -- max chars of a line shown before the match (issue #5)
+local ELLIPSIS = "…"
+
+-- Trim a line so it begins at most LEFT_CONTEXT chars before `anchor` (a 0-based
+-- byte offset into `text`). Returns (display_text, byte_shift); add byte_shift
+-- to any highlight column that referred to a byte at/after the anchor.
+local function trim_left(text, anchor)
+  if not anchor or anchor <= 0 then
+    return text, 0
+  end
+  local before = text:sub(1, anchor)
+  local nchars = vim.fn.strchars(before)
+  if nchars <= LEFT_CONTEXT then
+    return text, 0
+  end
+  local kept = vim.fn.strcharpart(before, nchars - LEFT_CONTEXT)
+  local new_text = ELLIPSIS .. kept .. text:sub(anchor + 1)
+  return new_text, #ELLIPSIS + #kept - anchor
+end
+
+-- First byte (0-based) where two strings differ, i.e. where the change begins.
+local function first_diff(a, b)
+  local n = math.min(#a, #b)
+  for i = 1, n do
+    if a:sub(i, i) ~= b:sub(i, i) then
+      return i - 1
+    end
+  end
+  return n
+end
+
 -- A file's path for display: relative to the search root when possible, then
 -- home-relative, then shortened to keep the tail (filename) visible. The real
 -- path stays on the item for opening.
@@ -502,8 +533,11 @@ function Panel:render_results()
     end
     if not f.collapsed then
       for _, m in ipairs(f.matches) do
-        local ln = string.format("%6d  %s", m.lnum, m.text)
-        lines[#lines + 1] = ln
+        -- Keep only a little context before the match so long lines still show
+        -- it (issue #5); shift the submatch highlights by the same amount.
+        local anchor = m.submatches[1] and m.submatches[1].start or 0
+        local disp, shift = trim_left(m.text, anchor)
+        lines[#lines + 1] = string.format("%6d  %s", m.lnum, disp)
         index[#lines] = { kind = "match", file = f, match = m }
         local mrow = #lines - 1
         local prefix = 8 -- "%6d" + two spaces
@@ -511,8 +545,8 @@ function Panel:render_results()
         for _, sm in ipairs(m.submatches) do
           marks[#marks + 1] = {
             row = mrow,
-            col = prefix + sm.start,
-            col_end = prefix + sm.finish,
+            col = prefix + sm.start + shift,
+            col_end = prefix + sm.finish + shift,
             hl = "PowerFinderMatch",
           }
         end
@@ -884,7 +918,11 @@ function Panel:render_replace()
     -- Hunks: hidden when the group is folded; dimmed when the file is deselected.
     if not f.collapsed then
       for _, l in ipairs(f.lines) do
-        lines[#lines + 1] = string.format("%6d -%s", l.lnum, l.old)
+        -- Anchor both rows at the first change so long lines still show it.
+        local anchor = first_diff(l.old, l.new)
+        local old_disp = (trim_left(l.old, anchor))
+        local new_disp = (trim_left(l.new, anchor))
+        lines[#lines + 1] = string.format("%6d -%s", l.lnum, old_disp)
         index[#lines] = { kind = "pdel" }
         local drow = #lines - 1
         if f.selected then
@@ -893,7 +931,7 @@ function Panel:render_replace()
         else
           marks[#marks + 1] = { row = drow, whole = true, hl = "PowerFinderDeselected" }
         end
-        lines[#lines + 1] = string.format("       +%s", l.new)
+        lines[#lines + 1] = string.format("       +%s", new_disp)
         index[#lines] = { kind = "padd" }
         local arow = #lines - 1
         if f.selected then

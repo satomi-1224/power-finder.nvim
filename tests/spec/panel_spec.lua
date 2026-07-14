@@ -210,6 +210,28 @@ describe("panel", function()
     p:close()
   end)
 
+  it("truncates long leading context before a match (issue #5)", function()
+    local dir = make_tree({ ["a.ts"] = string.rep("x", 60) .. "handleRequest\n" })
+    local p = panel_mod.open({ cwd = dir, scope = "path", scope_paths = { dir } })
+    p:_set_values({ search = "handleRequest" })
+    local done = false
+    p:_search_now(function()
+      done = true
+    end)
+    wait_until(function()
+      return done
+    end)
+    local ml
+    for _, l in ipairs(p:_results_lines()) do
+      if l:find("handleRequest", 1, true) and l:find("…", 1, true) then
+        ml = l
+      end
+    end
+    assert.is_truthy(ml) -- match line shows the ellipsis + the match
+    assert.is_nil(ml:find(string.rep("x", 20), 1, true)) -- long run trimmed
+    p:close()
+  end)
+
   it("populates the quickfix list", function()
     local dir = make_tree({ ["a.ts"] = "handleRequest\nhandleRequest\n" })
     local p = panel_mod.open({ cwd = dir, scope = "path", scope_paths = { dir } })
