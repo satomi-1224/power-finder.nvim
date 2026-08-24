@@ -26,7 +26,7 @@ jobs:
       # Pin a modern ripgrep: the replace feature relies on the `replacement`
       # field in `rg --json` output, which requires ripgrep 15+.
       - name: Install ripgrep
-        uses: taiki-e/install-action@v2.85.5
+        uses: taiki-e/install-action@v2.86.5
         with:
           tool: ripgrep@15.1.0
 
