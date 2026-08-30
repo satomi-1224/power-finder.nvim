@@ -1,8 +1,8 @@
 -- The integrated finder panel: a form window (editable search conditions)
 -- stacked over a read-only results window, styled after IntelliJ / Zed's
--- "Find in Files". Toggles are shown as chips on the search row, keybindings
--- live in the results window footer, and the whole panel paints an opaque
--- background so it never washes out into the colorscheme.
+-- "Find in Files". Toggles are shown as chips on the search row and keybindings
+-- live in the results window footer. All chrome uses theme-native highlight
+-- links, including transparent or blended floating-window styles.
 --
 -- Everything a mapping does is a Panel method, so the same surface is exercised
 -- by the headless smoke tests.
@@ -158,10 +158,10 @@ function Panel:open()
   end
 end
 
--- Force an opaque, panel-specific look regardless of the colorscheme: kill any
--- inherited transparency (winblend) and remap Normal/border/cursorline.
+-- Remap the generic floating-window groups to PowerFinder's semantic links.
+-- Do not override winblend: a theme or user may intentionally style floats as
+-- transparent or blended.
 function Panel:style_window(win, is_results)
-  vim.wo[win].winblend = 0
   vim.wo[win].wrap = false
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
