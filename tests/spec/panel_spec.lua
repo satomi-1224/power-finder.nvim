@@ -70,6 +70,17 @@ describe("panel", function()
     assert.is_false(p:is_open())
   end)
 
+  it("inherits the configured floating-window blend", function()
+    local previous = vim.o.winblend
+    vim.o.winblend = 23
+    local dir = make_tree({ ["a.ts"] = "x\n" })
+    local p = panel_mod.open({ cwd = dir, scope = "path", scope_paths = { dir } })
+    assert.equals(23, vim.wo[p.form_win].winblend)
+    assert.equals(23, vim.wo[p.res_win].winblend)
+    p:close()
+    vim.o.winblend = previous
+  end)
+
   it("renders grouped results for a query", function()
     local dir = make_tree({
       ["a.ts"] = "export function handleRequest() {}\n",

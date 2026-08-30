@@ -8,7 +8,7 @@ Zed / IntelliJ の *Find in Files* 級のプロジェクト検索・一括置換
 構造化フォームで条件を組み、ライブで結果を見て、diff を確認してから安全に置換します。
 
 - **一体型パネル** — 上部の条件フォーム（Search / Replace / Include / Exclude）と、
-  下部の読み取り専用結果を、不透明なフローティング2ウィンドウで表示。`<Tab>` で上下ペインを行き来。
+  下部の読み取り専用結果をフローティング2ウィンドウで表示。`<Tab>` で上下ペインを行き来。
 - **ライブ検索** — 入力のたびにデバウンス付きで ripgrep を再実行。進行中の検索はキャンセル。
 - **トグルチップ（`.* Aa W`）** — regex / case（大小区別）/ word を検索行の右端に表示。
   既定はすべて **OFF**（リテラル・大小無視・部分一致）で、`<C-r>` / `<C-c>` / `<C-w>` で点灯。
@@ -20,7 +20,8 @@ Zed / IntelliJ の *Find in Files* 級のプロジェクト検索・一括置換
 - **快適なナビゲーション** — カーソルは操作可能な行にだけ吸着。`<Space>` でグループ折りたたみ。
   結果からファイルへ飛ぶとパネルは自動で閉じ、条件は nvim を閉じるまで保持。
 - **quickfix 連携（`<C-q>`）** — 結果を quickfix へ送って既存ワークフローへ橋渡し。
-- **Selenized 準拠** — アクティブな colorscheme の `Normal` から配色を導出して馴染む（light / dark 両対応）。
+- **カラースキーム追従** — Neovim 標準の意味的ハイライトへリンクし、使用中の colorscheme、
+  light / dark、透明・ブレンド設定へそのまま追従。追加テーマへの依存なし。
 
 > 設計の背景と意思決定は [`DESIGN.md`](./DESIGN.md)、UI/UX の視覚プレビューは
 > [`mockup.html`](./mockup.html) を参照（どちらも旧称 `search-ui` 時代の名残がありますが
@@ -28,7 +29,7 @@ Zed / IntelliJ の *Find in Files* 級のプロジェクト検索・一括置換
 
 ## 要件
 
-- Neovim **0.10+**（開発・検証は 0.12.3）
+- Neovim **0.10+**（CI で 0.10.4 / stable / nightly を検証）
 - [ripgrep](https://github.com/BurntSushi/ripgrep)（`rg`）
   - 検索のみなら任意のバージョンで可
   - **一括置換のプレビューは ripgrep 15+** が必要（`rg --json` の `replacement`
@@ -127,6 +128,29 @@ require("power-finder").setup({
 })
 ```
 
+## カラースキーム
+
+専用色を固定せず、`PowerFinderNormal` → `NormalFloat`、`PowerFinderBorder` →
+`FloatBorder`、`PowerFinderMatch` → `Search`、置換差分 → `DiffAdd` / `DiffDelete`
+など、役割の合う Neovim 標準ハイライトへ既定リンクしています。カラースキームを実行中に
+切り替えても追従し、`winblend` や透明背景も上書きしません。
+
+colorscheme またはユーザーが `PowerFinder*` を直接定義した場合は、その定義を優先します。
+テーマ切替後も上書きを維持する場合は `ColorScheme` autocmd から再適用してください。
+たとえば検索一致だけ変更できます。
+
+```lua
+local function set_power_finder_highlights()
+  vim.api.nvim_set_hl(0, "PowerFinderMatch", { link = "IncSearch" })
+end
+
+set_power_finder_highlights()
+vim.api.nvim_create_autocmd("ColorScheme", {
+  group = vim.api.nvim_create_augroup("PowerFinderUserHighlights", { clear = true }),
+  callback = set_power_finder_highlights,
+})
+```
+
 ## アーキテクチャ
 
 vim 非依存の純粋ロジックと、副作用を持つ層を分離しています。
@@ -151,9 +175,9 @@ rust regex のキャプチャ展開が常に正確です。
 make test        # 全 spec を実行（tests/deps/plenary.nvim を自動取得）
 ```
 
-現在 **71 tests / 0 failures**。日本語（マルチバイト）のバイトオフセット、regex/リテラル、
-case トグル、glob include/exclude、キャプチャ参照置換、mtime 競合検知、デバウンス、
-条件のセッション保持、カーソル吸着、パネルの検索→折りたたみ→ライブ置換→適用までを検証しています。
+日本語（マルチバイト）のバイトオフセット、regex/リテラル、case トグル、glob include/exclude、
+キャプチャ参照置換、mtime 競合検知、デバウンス、カラースキーム追従、条件のセッション保持、
+カーソル吸着、パネルの検索→折りたたみ→ライブ置換→適用までを検証しています。
 
 > 補足: `PlenaryBustedDirectory` は本環境の headless 実行で子ジョブがハングしたため、
 > 同等の in-process ランナー（`tests/run.lua`）を使っています。

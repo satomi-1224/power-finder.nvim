@@ -10,12 +10,6 @@ function M.setup(opts)
 
   local hl = require("power-finder.highlight")
   hl.setup()
-  vim.api.nvim_create_autocmd("ColorScheme", {
-    group = vim.api.nvim_create_augroup("PowerFinderHighlights", { clear = true }),
-    callback = function()
-      hl.setup()
-    end,
-  })
 
   if config.options.keymap then
     vim.keymap.set("n", config.options.keymap, function()

@@ -19,7 +19,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        neovim: [stable, nightly]
+        # Keep the documented lower bound executable, not just aspirational.
+        neovim: [v0.10.4, stable, nightly]
     steps:
       - uses: actions/checkout@v7
 

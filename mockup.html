@@ -1,6 +1,6 @@
 <style>
-  /* ============ Selenized-based token system ============ */
-  /* Light (Selenized light) — default */
+  /* ============ Preview-only token system ============ */
+  /* The plugin itself follows the active Neovim colorscheme. */
   :root {
     --bg:        #fbf3db;
     --surface:   #f2e9cf;
@@ -310,7 +310,7 @@
       <span class="chip"><b>土台</b> 自作パネル + fzf-lua 補助</span>
       <span class="chip"><b>実行</b> ライブ (ripgrep --json)</span>
       <span class="chip"><b>置換</b> diff プレビュー → 一括適用</span>
-      <span class="chip"><b>配色</b> Selenized 準拠</span>
+      <span class="chip"><b>配色</b> Neovim テーマ追従</span>
     </div>
   </header>
 
@@ -467,7 +467,7 @@
       <div class="card"><span class="ic mono">≈</span><h4>ライブ検索</h4><p>入力のたびにデバウンス付きで ripgrep を再実行。進行中の検索はキャンセルし、件数上限で暴走を防止。</p></div>
       <div class="card"><span class="ic mono">±</span><h4>diff プレビュー置換</h4><p>実ファイルを触らず置換後を算出し diff 表示。ファイル単位でチェックし、1 undo ブロックで安全に適用。</p></div>
       <div class="card"><span class="ic mono">⚑</span><h4>quickfix 連携</h4><p>結果を <code>C-q</code> で quickfix へ。既存の <code>:cdo</code> や他プラグインのワークフローにそのまま橋渡し。</p></div>
-      <div class="card"><span class="ic mono">☾</span><h4>Selenized 準拠テーマ</h4><p>あなたの <code>selenized.nvim</code> に馴染む配色。light / dark 両対応で環境から浮かない。</p></div>
+      <div class="card"><span class="ic mono">☾</span><h4>カラースキーム追従</h4><p>標準ハイライトへのリンクで、使用中のテーマ、light / dark、透明背景にそのまま馴染む。</p></div>
     </div>
   </section>
 
@@ -525,7 +525,7 @@
 
   <footer>
     <div class="mono">search-ui.nvim</div>
-    Neovim 0.12 · ripgrep · lazy.nvim / home-manager · 配色は Selenized 準拠 — 右上のトグルで light / dark を確認できます。
+    Neovim 0.10+ · ripgrep · lazy.nvim / home-manager · 実装の配色は使用中の colorscheme に追従 — このプレビューは右上で light / dark を確認できます。
   </footer>
 </div>
 
